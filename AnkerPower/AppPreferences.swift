@@ -27,6 +27,17 @@ final class AppPreferences: ObservableObject {
         self.launchesAtLogin = SMAppService.mainApp.status == .enabled
     }
 
+    /// In-memory preferences for SwiftUI previews and screenshot export.
+    init(
+        previewNicknames: [Int: String] = [:],
+        idleNotificationsEnabled: Bool = false,
+        launchesAtLogin: Bool = false
+    ) {
+        self.portNicknames = previewNicknames
+        self.idleNotificationsEnabled = idleNotificationsEnabled
+        self.launchesAtLogin = launchesAtLogin
+    }
+
     func displayName(forPort index: Int) -> String {
         if let nickname = portNicknames[index]?.trimmingCharacters(in: .whitespacesAndNewlines),
            !nickname.isEmpty {

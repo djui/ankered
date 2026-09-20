@@ -22,8 +22,19 @@ enum PreviewSample {
             historySamples: historySamples(),
             diagnosticEntries: diagnosticEntries(),
             canControlPorts: true,
-            settings: ChargerSettings(brightnessPercent: 80, screenTimeout: .oneMinute),
-            chargerHistory: chargerHistory()
+            settings: ChargerSettings(
+                brightnessPercent: 80,
+                screenTimeout: .oneMinute,
+                orientation: .up,
+                autoRotate: true,
+                language: .english,
+                customSplit: CustomChargeSplit(portWatts: [80, 60, 20])
+            ),
+            chargerHistory: chargerHistory(),
+            preferences: AppPreferences(
+                previewNicknames: [1: "MacBook", 2: "iPhone"],
+                idleNotificationsEnabled: true
+            )
         )
     }
 
@@ -173,6 +184,13 @@ enum ScreenshotExporter {
                 DiagnosticsView(model: model)
                     .frame(width: 860, height: 520),
                 to: directory.appendingPathComponent("diagnostics.png"),
+                scale: 2
+            )
+            try write(
+                SettingsView(model: model)
+                    .frame(width: 280)
+                    .padding(2),
+                to: directory.appendingPathComponent("settings.png"),
                 scale: 2
             )
         } catch {

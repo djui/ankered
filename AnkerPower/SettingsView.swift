@@ -3,15 +3,25 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var model: AppModel
     @ObservedObject private var preferences: AppPreferences
+    @Environment(\.isScreenshotExport) private var isScreenshotExport
 
-    @State private var customC1: Int = 0
-    @State private var customC2: Int = 0
-    @State private var customC3: Int = 0
-    @State private var nicknameDrafts: [Int: String] = [1: "", 2: "", 3: ""]
+    @State private var customC1: Int
+    @State private var customC2: Int
+    @State private var customC3: Int
+    @State private var nicknameDrafts: [Int: String]
 
     init(model: AppModel) {
         self.model = model
-        _preferences = ObservedObject(wrappedValue: model.preferences)
+        let preferences = model.preferences
+        _preferences = ObservedObject(wrappedValue: preferences)
+        _customC1 = State(initialValue: Int(model.settings.customSplit?.c1 ?? 0))
+        _customC2 = State(initialValue: Int(model.settings.customSplit?.c2 ?? 0))
+        _customC3 = State(initialValue: Int(model.settings.customSplit?.c3 ?? 0))
+        _nicknameDrafts = State(initialValue: [
+            1: preferences.portNicknames[1] ?? "",
+            2: preferences.portNicknames[2] ?? "",
+            3: preferences.portNicknames[3] ?? ""
+        ])
     }
 
     var body: some View {
@@ -103,9 +113,9 @@ struct SettingsView: View {
             Text("Each port 0 or 15–140 W, 160 W total.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            wattStepper("C1", value: $customC1)
-            wattStepper("C2", value: $customC2)
-            wattStepper("C3", value: $customC3)
+            wattRow("C1", value: $customC1)
+            wattRow("C2", value: $customC2)
+            wattRow("C3", value: $customC3)
             let split = CustomChargeSplit(portWatts: [
                 UInt8(customC1),
                 UInt8(customC2),
@@ -149,14 +159,7 @@ struct SettingsView: View {
             ForEach(1...3, id: \.self) { index in
                 HStack {
                     Text("C\(index) name")
-                    TextField("Optional", text: Binding(
-                        get: { nicknameDrafts[index] ?? "" },
-                        set: { nicknameDrafts[index] = $0 }
-                    ))
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit {
-                        preferences.setNickname(nicknameDrafts[index] ?? "", forPort: index)
-                    }
+                    nicknameField(index)
                 }
             }
             Button("Save port names") {
@@ -167,9 +170,40 @@ struct SettingsView: View {
         }
     }
 
-    private func wattStepper(_ title: String, value: Binding<Int>) -> some View {
-        Stepper(value: value, in: 0...140, step: 5) {
+    @ViewBuilder
+    private func nicknameField(_ index: Int) -> some View {
+        let name = nicknameDrafts[index] ?? ""
+        if isScreenshotExport {
+            Text(name.isEmpty ? "Optional" : name)
+                .foregroundStyle(name.isEmpty ? .secondary : .primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
+                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 5))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 5)
+                        .stroke(Color(nsColor: .separatorColor).opacity(0.6), lineWidth: 1)
+                )
+        } else {
+            TextField("Optional", text: Binding(
+                get: { nicknameDrafts[index] ?? "" },
+                set: { nicknameDrafts[index] = $0 }
+            ))
+            .textFieldStyle(.roundedBorder)
+            .onSubmit {
+                preferences.setNickname(nicknameDrafts[index] ?? "", forPort: index)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func wattRow(_ title: String, value: Binding<Int>) -> some View {
+        if isScreenshotExport {
             Text("\(title)  \(value.wrappedValue) W")
+        } else {
+            Stepper(value: value, in: 0...140, step: 5) {
+                Text("\(title)  \(value.wrappedValue) W")
+            }
         }
     }
 
@@ -183,4 +217,9 @@ struct SettingsView: View {
         }
         .disabled(!model.canControlPorts)
     }
+}
+
+#Preview("Settings") {
+    SettingsView(model: PreviewSample.connectedModel())
+        .frame(width: 280)
 }
