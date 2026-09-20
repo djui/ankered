@@ -12,6 +12,10 @@ Unofficial native **macOS menu-bar** monitor for the **Anker Prime Charger 160W 
 
 The app lives in the menu bar (`LSUIElement`). It connects locally over Bluetooth LE, shows live power, and can change charging mode, display settings, and individual USB-C ports. It is not affiliated with Anker Innovations.
 
+<p align="center">
+  <img src="docs/screenshots/menubar.png" alt="Menu bar status item showing live watts" width="360">
+</p>
+
 <p>
   <img src="docs/screenshots/menu.png" alt="Menu bar popover" width="48%">
   <img src="docs/screenshots/settings.png" alt="Settings popover" width="48%">

@@ -123,11 +123,11 @@ main,
   font-size: 0.95rem;
 }
 
-.nav-links a {
+.nav-links a:not(.btn) {
   color: var(--muted);
 }
 
-.nav-links a:hover {
+.nav-links a:not(.btn):hover {
   color: var(--text);
   text-decoration: none;
 }
@@ -153,7 +153,8 @@ main,
   font-size: 0.9rem;
 }
 
-.btn-primary {
+.btn-primary,
+.btn-primary:hover {
   background: linear-gradient(180deg, var(--blue-hot), var(--blue));
   color: #041018;
   box-shadow: 0 8px 24px rgba(62, 168, 255, 0.28);
@@ -203,7 +204,8 @@ h2 {
 }
 
 h1 {
-  font-size: clamp(2.4rem, 5vw, 4rem);
+  font-size: clamp(1.85rem, 3.2vw, 2.7rem);
+  text-wrap: balance;
 }
 
 h2 {
@@ -365,16 +367,39 @@ h2 {
     radial-gradient(circle at 37px 50%, #28c840 4.5px, transparent 5px);
 }
 
-.window img {
+.window-bare {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+  box-shadow: none;
+}
+
+.window img,
+.window-bare img {
   width: 100%;
-  background: #fff;
+  height: auto;
+  background: transparent;
+  vertical-align: middle;
 }
 
 .window-hero {
   grid-column: 1 / -1;
-  transform: rotate(-1.4deg);
   max-width: 360px;
   justify-self: end;
+}
+
+.menubar-shot {
+  grid-column: 1 / -1;
+  margin: 0;
+  max-width: 420px;
+  justify-self: end;
+}
+
+.menubar-shot img {
+  width: 100%;
+  height: auto;
+  display: block;
 }
 
 .shot-btn {
@@ -397,21 +422,21 @@ h2 {
 }
 
 .proof-card .window {
-  height: 100%;
+  height: auto;
 }
 
 .proof-card img {
   width: 100%;
-  aspect-ratio: 4 / 3;
-  object-fit: cover;
-  object-position: top center;
+  height: 380px;
+  object-fit: contain;
+  object-position: center center;
 }
 
 .proof-card {
   padding: 0;
   border: 0;
   background: none;
-  color: var(--muted);
+  color: var(--text);
   text-align: left;
   cursor: zoom-in;
   font: inherit;
@@ -428,9 +453,10 @@ h2 {
 
 .proof-card span {
   display: block;
-  margin-top: 0.7rem;
-  font-size: 0.9rem;
-  font-weight: 600;
+  margin-top: 0.75rem;
+  font-size: 1rem;
+  font-weight: 650;
+  color: var(--text);
 }
 
 .feature.split {
@@ -442,13 +468,13 @@ h2 {
 
 .feature.split .window {
   max-width: 420px;
-  max-height: 620px;
+  max-height: none;
 }
 
 .feature.split .window img {
   max-height: 560px;
-  object-fit: cover;
-  object-position: top;
+  object-fit: contain;
+  object-position: center top;
 }
 
 .split-reverse .window {
@@ -554,8 +580,8 @@ h2 {
 
 .window-wide img {
   display: block;
-  max-height: 420px;
-  object-fit: cover;
+  max-height: none;
+  object-fit: contain;
   object-position: top center;
 }
 
@@ -665,15 +691,15 @@ h2 {
   max-height: 80vh;
   width: auto;
   margin: 0 auto;
-  border-radius: 12px;
-  background: #fff;
-  box-shadow: var(--shadow);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .lightbox figcaption {
   text-align: center;
   margin-top: 0.8rem;
-  color: var(--muted);
+  color: var(--text);
 }
 
 .lightbox-close {
@@ -706,8 +732,11 @@ h2 {
 
   .window-hero {
     justify-self: center;
-    transform: none;
     max-width: 420px;
+  }
+
+  .menubar-shot {
+    justify-self: center;
   }
 
   .hero-visual {

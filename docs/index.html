@@ -36,7 +36,7 @@
     <section class="hero">
       <div class="hero-copy">
         <p class="eyebrow">macOS 14+ · A2687 only · local BLE</p>
-        <h1>Your Anker Prime 160W,<br>in the Mac menu bar.</h1>
+        <h1>Your Anker Prime 160W, in the Mac menu bar.</h1>
         <p class="lede">Live watts, per-port control, and charger settings over Bluetooth LE. No Anker account. No cloud. No network requests.</p>
         <div class="hero-actions">
           <a class="btn btn-primary" href="https://github.com/djui/ankered/releases/latest">Download 1.2.1</a>
@@ -54,20 +54,20 @@
         <div class="watt-orb">
           <img class="hero-icon" src="assets/icon.png" width="88" height="88" alt="Anker Power app icon">
           <p class="watt-readout">
-            <span class="watt-value" data-count="84">0</span><span class="watt-unit">W</span>
+            <span class="watt-value" data-count="28">0</span><span class="watt-unit">W</span>
           </p>
           <p class="watt-caption">Total output</p>
         </div>
         <div class="port-chips">
           <div class="port-chip">
             <span class="port-dot c1"></span>
-            <span>C1 MacBook</span>
-            <strong>64 W</strong>
+            <span>C1</span>
+            <strong>28 W</strong>
           </div>
           <div class="port-chip">
             <span class="port-dot c2"></span>
-            <span>C2 iPhone</span>
-            <strong>20 W</strong>
+            <span>C2</span>
+            <strong>0 W</strong>
           </div>
           <div class="port-chip">
             <span class="port-dot c3"></span>
@@ -75,13 +75,12 @@
             <strong>0 W</strong>
           </div>
         </div>
-        <figure class="window window-hero">
-          <div class="window-chrome">
-            <span class="traffic"></span>
-            <figcaption>Menu bar</figcaption>
-          </div>
+        <figure class="menubar-shot">
+          <img src="screenshots/menubar.png" alt="macOS menu bar with Anker Power showing live watts">
+        </figure>
+        <figure class="window window-hero window-bare">
           <button type="button" class="shot-btn" data-lightbox="screenshots/menu.png" data-caption="Menu bar popover">
-            <img src="screenshots/menu.png" alt="Menu bar popover showing 84 W total, nicknamed ports, and live volts and amps">
+            <img src="screenshots/menu.png" alt="Menu bar popover showing 28 W total output, C1 at 28 W, and live volts and amps">
           </button>
         </figure>
       </div>
@@ -90,29 +89,25 @@
     <section class="proof" id="gallery" aria-label="App screenshots">
       <div class="proof-grid">
         <button type="button" class="proof-card" data-reveal data-lightbox="screenshots/menu.png" data-caption="Live menu bar popover">
-          <figure class="window">
-            <div class="window-chrome"><span class="traffic"></span><figcaption>Menu</figcaption></div>
+          <figure class="window window-bare">
             <img src="screenshots/menu.png" alt="Menu bar popover">
           </figure>
           <span>Live watts</span>
         </button>
         <button type="button" class="proof-card" data-reveal data-lightbox="screenshots/settings.png" data-caption="Display, custom split, and Mac preferences">
-          <figure class="window">
-            <div class="window-chrome"><span class="traffic"></span><figcaption>Settings</figcaption></div>
+          <figure class="window window-bare">
             <img src="screenshots/settings.png" alt="Settings popover">
           </figure>
           <span>Modes &amp; display</span>
         </button>
         <button type="button" class="proof-card" data-reveal data-lightbox="screenshots/history.png" data-caption="Charging history chart">
-          <figure class="window">
-            <div class="window-chrome"><span class="traffic"></span><figcaption>History</figcaption></div>
+          <figure class="window window-bare">
             <img src="screenshots/history.png" alt="Charging history window">
           </figure>
           <span>24-hour history</span>
         </button>
         <button type="button" class="proof-card" data-reveal data-lightbox="screenshots/diagnostics.png" data-caption="Connection diagnostics">
-          <figure class="window">
-            <div class="window-chrome"><span class="traffic"></span><figcaption>Diagnostics</figcaption></div>
+          <figure class="window window-bare">
             <img src="screenshots/diagnostics.png" alt="Connection diagnostics window">
           </figure>
           <span>Local diagnostics</span>
@@ -121,10 +116,9 @@
     </section>
 
     <section class="feature split" id="features">
-      <figure class="window" data-reveal>
-        <div class="window-chrome"><span class="traffic"></span><figcaption>C1 · C2 · C3</figcaption></div>
+      <figure class="window window-bare" data-reveal>
         <button type="button" class="shot-btn" data-lightbox="screenshots/menu.png" data-caption="Per-port live power">
-          <img src="screenshots/menu.png" alt="Per-port power, cable rating, charging profile, and shutdown timer">
+          <img src="screenshots/menu.png" alt="Per-port power, cable rating, Apple PD Fast Charging, and connected device">
         </button>
       </figure>
       <div class="feature-copy" data-reveal>
@@ -175,10 +169,9 @@
         </div>
         <p class="split-note">Each port 0 or 15–140 W, 160 W total. Display brightness, timeout, language, and rotation live in the same settings pane.</p>
       </div>
-      <figure class="window" data-reveal>
-        <div class="window-chrome"><span class="traffic"></span><figcaption>Settings</figcaption></div>
+      <figure class="window window-bare" data-reveal>
         <button type="button" class="shot-btn" data-lightbox="screenshots/settings.png" data-caption="Display settings and custom watt split">
-          <img src="screenshots/settings.png" alt="Settings with brightness, timeout, language, and an 80 / 60 / 20 watt custom split">
+          <img src="screenshots/settings.png" alt="Settings with brightness, timeout, language, custom watt split, and port nicknames">
         </button>
       </figure>
     </section>
@@ -194,10 +187,9 @@
           <li>Export CSV · stays local</li>
         </ul>
       </div>
-      <figure class="window window-wide" data-reveal>
-        <div class="window-chrome"><span class="traffic"></span><figcaption>Charging history</figcaption></div>
+      <figure class="window window-wide window-bare" data-reveal>
         <button type="button" class="shot-btn" data-lightbox="screenshots/history.png" data-caption="Charging history">
-          <img src="screenshots/history.png" alt="Charging history chart with total, C1, C2, and C3 series">
+          <img src="screenshots/history.png" alt="Charging history chart with total, C1, C2, and C3 series over six hours">
         </button>
       </figure>
     </section>
@@ -223,8 +215,7 @@
           </ul>
         </article>
       </div>
-      <figure class="window window-wide" data-reveal>
-        <div class="window-chrome"><span class="traffic"></span><figcaption>Connection diagnostics</figcaption></div>
+      <figure class="window window-wide window-bare" data-reveal>
         <button type="button" class="shot-btn" data-lightbox="screenshots/diagnostics.png" data-caption="Privacy-aware diagnostics log">
           <img src="screenshots/diagnostics.png" alt="Diagnostics log of the local BLE handshake with payloads omitted">
         </button>
