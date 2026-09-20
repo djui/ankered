@@ -4,7 +4,7 @@ import Foundation
 final class HistoryStore: ObservableObject {
     @Published private(set) var samples: [PowerHistorySample] = []
 
-    private let historyURL: URL
+    private let historyURL: URL?
     private var saveWorkItem: DispatchWorkItem?
 
     init() {
@@ -13,6 +13,22 @@ final class HistoryStore: ObservableObject {
         historyURL = folder.appendingPathComponent("power-history.json")
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         load()
+    }
+
+    init(persist: Bool, samples: [PowerHistorySample] = []) {
+        if persist {
+            let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            let folder = support.appendingPathComponent("AnkerPower", isDirectory: true)
+            historyURL = folder.appendingPathComponent("power-history.json")
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            self.samples = samples
+            if samples.isEmpty {
+                load()
+            }
+        } else {
+            historyURL = nil
+            self.samples = samples
+        }
     }
 
     func append(_ telemetry: ChargerTelemetry) {
@@ -48,13 +64,15 @@ final class HistoryStore: ObservableObject {
     }
 
     private func load() {
-        guard let data = try? Data(contentsOf: historyURL),
+        guard let historyURL,
+              let data = try? Data(contentsOf: historyURL),
               let decoded = try? JSONDecoder().decode([PowerHistorySample].self, from: data) else { return }
         samples = decoded
         trim()
     }
 
     private func scheduleSave() {
+        guard let historyURL else { return }
         saveWorkItem?.cancel()
         let snapshot = samples
         let url = historyURL

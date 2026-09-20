@@ -3,6 +3,7 @@ import SwiftUI
 
 struct DiagnosticsView: View {
     @ObservedObject var model: AppModel
+    @Environment(\.isScreenshotExport) private var isScreenshotExport
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,28 +31,13 @@ struct DiagnosticsView: View {
                     systemImage: "wave.3.right",
                     description: Text("Bluetooth activity will appear here.")
                 )
+            } else if isScreenshotExport {
+                diagnosticList
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 7) {
-                            ForEach(model.diagnostics.entries) { entry in
-                                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                    Text(entry.timestamp, format: .dateTime.hour().minute().second())
-                                        .foregroundStyle(.tertiary)
-                                    Text(entry.level.rawValue)
-                                        .foregroundStyle(color(for: entry.level))
-                                        .frame(width: 42, alignment: .leading)
-                                    Text("[\(entry.category)]")
-                                        .foregroundStyle(.secondary)
-                                    Text(entry.message)
-                                        .textSelection(.enabled)
-                                }
-                                .font(.system(.caption, design: .default))
-                                .id(entry.id)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
+                        diagnosticList
                     }
                     .onChange(of: model.diagnostics.entries.last?.id) { _, id in
                         guard let id else { return }
@@ -61,6 +47,28 @@ struct DiagnosticsView: View {
             }
         }
         .frame(minWidth: 760, minHeight: 440)
+    }
+
+    private var diagnosticList: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            ForEach(model.diagnostics.entries) { entry in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(entry.timestamp, format: .dateTime.hour().minute().second())
+                        .foregroundStyle(.tertiary)
+                    Text(entry.level.rawValue)
+                        .foregroundStyle(color(for: entry.level))
+                        .frame(width: 42, alignment: .leading)
+                    Text("[\(entry.category)]")
+                        .foregroundStyle(.secondary)
+                    Text(entry.message)
+                        .textSelection(.enabled)
+                }
+                .font(.system(.caption, design: .default))
+                .id(entry.id)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
     }
 
     private func copyAll() {
@@ -76,4 +84,9 @@ struct DiagnosticsView: View {
         case .error: return .red
         }
     }
+}
+
+#Preview("Diagnostics") {
+    DiagnosticsView(model: PreviewSample.connectedModel())
+        .frame(width: 860, height: 520)
 }

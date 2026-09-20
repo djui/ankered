@@ -1,5 +1,9 @@
 .DS_Store
 DerivedData/
 build/
+release/
+*.xcarchive
 *.xcuserstate
 xcuserdata/
+*.profraw
+default.profraw

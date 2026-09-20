@@ -18,6 +18,7 @@
 		A0010000000000000000000B /* AnkerProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0010000000000000000000C /* AnkerProtocolTests.swift */; };
 		A0010000000000000000000C /* DiagnosticLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0010000000000000000000F /* DiagnosticLog.swift */; };
 		A0010000000000000000000D /* DiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00100000000000000000010 /* DiagnosticsView.swift */; };
+		A0010000000000000000000E /* PreviewSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00100000000000000000011 /* PreviewSupport.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -45,6 +46,7 @@
 		B0010000000000000000000E /* AnkerPowerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AnkerPowerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B0010000000000000000000F /* DiagnosticLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticLog.swift; sourceTree = "<group>"; };
 		B00100000000000000000010 /* DiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsView.swift; sourceTree = "<group>"; };
+		B00100000000000000000011 /* PreviewSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewSupport.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -75,6 +77,7 @@
 				B00100000000000000000009 /* HistoryView.swift */,
 				B0010000000000000000000F /* DiagnosticLog.swift */,
 				B00100000000000000000010 /* DiagnosticsView.swift */,
+				B00100000000000000000011 /* PreviewSupport.swift */,
 				B0010000000000000000000B /* AnkerPower.entitlements */,
 			);
 			path = AnkerPower;
@@ -178,6 +181,7 @@
 				A00100000000000000000009 /* HistoryView.swift in Sources */,
 				A0010000000000000000000C /* DiagnosticLog.swift in Sources */,
 				A0010000000000000000000D /* DiagnosticsView.swift in Sources */,
+				A0010000000000000000000E /* PreviewSupport.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

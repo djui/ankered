@@ -329,3 +329,8 @@ struct MenuContentView: View {
         return "\(seconds)s"
     }
 }
+
+#Preview("Menu") {
+    MenuContentView(model: PreviewSample.connectedModel())
+        .frame(width: 280)
+}

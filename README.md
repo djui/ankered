@@ -1,50 +1,114 @@
-# Anker Power
+# Anker Power (ankered)
 
-A native macOS menu-bar monitor for the Anker Prime Charger 160W with Smart Display (A2687).
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![macOS 14+](https://img.shields.io/badge/macOS-14%2B-black)](https://github.com/djui/ankered)
 
-The app connects locally over Bluetooth LE and displays:
+Unofficial native **macOS menu-bar** monitor for the **Anker Prime Charger 160W with Smart Display (A2687)**.
 
-- Total and per-port power
-- Per-port voltage and current
-- Per-port output shutdown and a shutdown timer
-- All three port values directly in the menu-bar title
-- Generic USB-C 1, 2, and 3 labels
-- A rolling 24-hour charging-power graph and delivered-energy estimate
-- A live connection-diagnostics window with copyable Bluetooth and protocol events
+The app lives in the menu bar (`LSUIElement`). It connects locally over Bluetooth LE, shows live power, and can turn individual USB-C ports on or off or set a shutdown timer. It is not affiliated with Anker Innovations.
 
-The charger does not report the name of a connected device, so port labels remain generic.
+![Menu bar popover](docs/screenshots/menu.png)
+
+<p>
+  <img src="docs/screenshots/history.png" alt="Charging history window" width="48%">
+  <img src="docs/screenshots/diagnostics.png" alt="Connection diagnostics window" width="48%">
+</p>
+
+## What's included
+
+- macOS 14+ menu-bar app for **A2687 only**
+- Local BLE only — no Anker account, no cloud, no network requests
+- Menu-bar title with **total watts** while connected (bolt icon when idle)
+- Per-port watts, volts, and amps, plus charging mode when the charger reports it
+- Optional cable / charging / device strings when the charger sends them
+- Port output on/off and per-port shutdown timers (modern AES-GCM session)
+- Rolling 24-hour history chart and a local watt-hour estimate
+- Diagnostics window with copyable BLE and protocol events (no session keys or decrypted payloads)
+- Current Anker-app-compatible P-256 ECDH / AES-GCM handshake, with AES-CBC fallback from [Anker-BLE](https://github.com/T-REX-XP/Anker-BLE)
+
+## What's not included
+
+- Changing charging modes (AI 2.0, C1 Priority, Dual Laptop, and so on)
+- Firmware updates or OTA
+- iOS, iPadOS, Windows, Linux
+- Home Assistant, MQTT, or any other home-automation bridge
+- MagGo pads, power banks, Solix stations, or other Anker models
+- Names of the devices plugged into the ports — the charger does not report them
+- Sharing the BLE session with the official Anker app (only one client at a time)
+- App Store distribution or Apple notarization (see [Install](#install))
 
 ## Requirements
 
 - macOS 14 or newer
-- Xcode 15 or newer
-- Anker Prime Charger 160W, model A2687
+- Xcode 15 or newer to build from source
+- Anker Prime Charger 160W, model **A2687**
+- Bluetooth permission
+- The official Anker mobile app disconnected from the charger
 
-## Build and run
+## Install
 
-1. Open `AnkerPower.xcodeproj` in Xcode.
-2. Select the `AnkerPower` scheme and **My Mac**.
-3. Run the app.
-4. Grant Bluetooth permission when macOS asks.
-5. Disconnect the charger from the official Anker mobile app, because only one BLE client can normally use it at a time.
+Download `AnkerPower-1.0.0.zip` from the [latest GitHub Release](https://github.com/djui/ankered/releases/latest), unzip it, and move `AnkerPower.app` to `/Applications`.
 
-If connection fails, open **Diagnostics** from the menu-bar panel. It shows scanning, GATT discovery, handshake stages, command metadata, and errors. **Copy All** produces a report suitable for an issue without including session keys or decrypted packet bodies.
+Builds are ad-hoc signed and **not notarized**. On first launch, right-click the app and choose **Open**, then confirm. After that, Spotlight and Finder open it normally.
 
-The application is an accessory app (`LSUIElement`) and therefore appears only in the menu bar.
+Grant Bluetooth access when macOS asks.
 
-From Terminal, compile and run tests with:
+## Usage
+
+The app appears only in the menu bar. Click the bolt icon:
+
+- **Connected** — total watts in the menu-bar title; the popover lists C1–C3
+- **Reconnect** — drop the current session and scan again
+- **Diagnostics** — handshake and protocol log
+- **History** — last 1 / 6 / 24 hours, stored on this Mac
+- **Quit**
+
+If a connection fails, open Diagnostics and use **Copy All** when filing an issue.
+
+## Build from source
+
+```sh
+open AnkerPower.xcodeproj
+```
+
+Select the `AnkerPower` scheme and **My Mac**, then Run.
 
 ```sh
 xcodebuild -project AnkerPower.xcodeproj -scheme AnkerPower \
   -destination 'platform=macOS' test
 ```
 
-## Protocol status
+Cut a local archive (and optionally a GitHub Release) with:
 
-This is an unofficial implementation. The A2687 BLE protocol is not a public Anker API and may change with charger firmware. The app first performs the current app-compatible, ephemeral P-256 ECDH/AES-GCM session and polls `0x020A`/`0x0200`. If that handshake does not answer, it falls back to the older AES-CBC flow and `0x4200` telemetry subscription documented by the MIT-licensed `T-REX-XP/Anker-BLE` proof of concept.
-
-Port control uses the official minicharge commands `0x0207` (output on/off) and `0x0209` (shutdown timer in seconds). Those writes are available only on the AES-GCM session. Firmware-update commands are not included.
+```sh
+./scripts/release.sh            # zip only
+./scripts/release.sh --publish 1.0.0
+```
 
 ## Privacy
 
-All charger telemetry and history remain on the Mac. Up to 24 hours of samples are stored in the app's Application Support container. The app makes no network requests.
+All charger telemetry and history stay on the Mac. Up to 24 hours of samples are stored in the app's Application Support container (`~/Library/Application Support/AnkerPower/`). The app makes no network requests.
+
+## Protocol
+
+This is an unofficial implementation. The A2687 BLE protocol is not a public Anker API and may change with charger firmware.
+
+The app first performs the current app-compatible, ephemeral P-256 ECDH/AES-GCM session and polls `0x020A`/`0x0200`. If that handshake does not answer, it falls back to the older AES-CBC flow and `0x4200` telemetry subscription documented by the MIT-licensed [T-REX-XP/Anker-BLE](https://github.com/T-REX-XP/Anker-BLE) project. Port control is available on the modern session only.
+
+## Credits
+
+Protocol constants, FF09 framing, negotiation, ECDH/AES-CBC behavior, and telemetry subscription are derived from:
+
+- **[Anker-BLE](https://github.com/T-REX-XP/Anker-BLE)** — Copyright (c) 2026 T-REX-XP / Anker-BLE contributors, MIT License. Full notice: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+The app-compatible AES-GCM handshake and telemetry commands were cross-checked against public reverse-engineering notes in:
+
+- **[Anker Prime 160W WebBLE (A2687)](https://github.com/Hyper-Beast/Anker_Prime_160W_WebBLE)** — research only; no code or assets from that repository are distributed here.
+
+## License
+
+Ankered is released under the [MIT License](LICENSE). That is compatible with Anker-BLE's MIT license; the required copyright and permission notice is reproduced in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## Disclaimer
+
+Unofficial research software. **Anker** is a trademark of Anker Innovations. This project is not affiliated with, endorsed by, or sponsored by Anker Innovations. Use at your own risk. Keep the official Anker app disconnected while this app holds the BLE session.

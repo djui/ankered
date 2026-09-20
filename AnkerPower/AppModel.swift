@@ -7,18 +7,42 @@ final class AppModel: ObservableObject {
     @Published private(set) var telemetry = ChargerTelemetry.empty
     @Published private(set) var portCommandsInFlight: Set<Int> = []
 
-    let history = HistoryStore()
+    let history: HistoryStore
     let diagnostics: DiagnosticLog
 
-    private let bluetooth: ChargerBluetooth
+    private let bluetooth: ChargerBluetooth?
+    private let previewCanControl: Bool
     private var lastLocalControlAt: [Int: Date] = [:]
 
     init() {
         let diagnostics = DiagnosticLog()
+        let bluetooth = ChargerBluetooth(diagnostics: diagnostics)
+        self.history = HistoryStore()
         self.diagnostics = diagnostics
-        self.bluetooth = ChargerBluetooth(diagnostics: diagnostics)
+        self.bluetooth = bluetooth
+        self.previewCanControl = false
         bluetooth.delegate = self
         bluetooth.start()
+    }
+
+    /// In-memory sample used by SwiftUI previews and screenshot export. Does not start Bluetooth.
+    init(
+        previewState: ChargerConnectionState,
+        identity: ChargerIdentity,
+        telemetry: ChargerTelemetry,
+        historySamples: [PowerHistorySample] = [],
+        diagnosticEntries: [DiagnosticEntry] = [],
+        canControlPorts: Bool = true
+    ) {
+        self.history = HistoryStore(persist: false, samples: historySamples)
+        let diagnostics = DiagnosticLog()
+        diagnostics.seedForPreview(diagnosticEntries)
+        self.diagnostics = diagnostics
+        self.bluetooth = nil
+        self.previewCanControl = canControlPorts
+        self.connectionState = previewState
+        self.identity = identity
+        self.telemetry = telemetry
     }
 
     var totalPower: Double { telemetry.totalPower }
@@ -28,15 +52,15 @@ final class AppModel: ObservableObject {
     }
 
     var canControlPorts: Bool {
-        connectionState.isConnected && bluetooth.canControlPorts
+        connectionState.isConnected && (bluetooth?.canControlPorts ?? previewCanControl)
     }
 
     func reconnect() {
-        bluetooth.reconnect()
+        bluetooth?.reconnect()
     }
 
     func disconnect() {
-        bluetooth.disconnect()
+        bluetooth?.disconnect()
     }
 
     func isPortCommandInFlight(_ index: Int) -> Bool {
@@ -46,9 +70,9 @@ final class AppModel: ObservableObject {
     func setPortOutput(index: Int, enabled: Bool) {
         guard canControlPorts, !portCommandsInFlight.contains(index) else { return }
         portCommandsInFlight.insert(index)
+        applyLocalOutput(index: index, enabled: enabled)
         do {
-            try bluetooth.setPortOutput(index: index, enabled: enabled)
-            applyLocalOutput(index: index, enabled: enabled)
+            try bluetooth?.setPortOutput(index: index, enabled: enabled)
         } catch {
             diagnostics.record(
                 "Could not set C\(index) output: \(error.localizedDescription)",
@@ -62,9 +86,9 @@ final class AppModel: ObservableObject {
     func setPortShutdownTimer(index: Int, seconds: UInt32) {
         guard canControlPorts, !portCommandsInFlight.contains(index) else { return }
         portCommandsInFlight.insert(index)
+        applyLocalTimer(index: index, seconds: seconds)
         do {
-            try bluetooth.setPortShutdownTimer(index: index, seconds: seconds)
-            applyLocalTimer(index: index, seconds: seconds)
+            try bluetooth?.setPortShutdownTimer(index: index, seconds: seconds)
         } catch {
             diagnostics.record(
                 "Could not set C\(index) shutdown timer: \(error.localizedDescription)",

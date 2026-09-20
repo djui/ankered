@@ -55,6 +55,10 @@ final class DiagnosticLog: ObservableObject {
         record("Diagnostics cleared", category: "App")
     }
 
+    func seedForPreview(_ seeded: [DiagnosticEntry]) {
+        entries = seeded
+    }
+
     var exportedText: String {
         entries.map { entry in
             "\(Self.timestampFormatter.string(from: entry.timestamp)) [\(entry.level.rawValue)] [\(entry.category)] \(entry.message)"

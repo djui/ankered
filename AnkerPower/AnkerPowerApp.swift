@@ -2,7 +2,18 @@ import SwiftUI
 
 @main
 struct AnkerPowerApp: App {
-    @StateObject private var model = AppModel()
+    @StateObject private var model: AppModel
+
+    init() {
+        if ScreenshotExporter.isRequested {
+            _model = StateObject(wrappedValue: PreviewSample.connectedModel())
+            DispatchQueue.main.async {
+                ScreenshotExporter.exportIfRequested()
+            }
+        } else {
+            _model = StateObject(wrappedValue: AppModel())
+        }
+    }
 
     var body: some Scene {
         MenuBarExtra {
@@ -21,7 +32,6 @@ struct AnkerPowerApp: App {
             DiagnosticsView(model: model)
         }
         .defaultSize(width: 860, height: 520)
-
     }
 }
 

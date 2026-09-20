@@ -5,6 +5,7 @@ struct HistoryView: View {
     @ObservedObject var model: AppModel
     @ObservedObject private var history: HistoryStore
     @State private var range: HistoryRange = .hour
+    @Environment(\.isScreenshotExport) private var isScreenshotExport
 
     init(model: AppModel) {
         self.model = model
@@ -59,13 +60,17 @@ struct HistoryView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Picker("", selection: $range) {
-                    ForEach(HistoryRange.allCases) { Text($0.rawValue).tag($0) }
+                if isScreenshotExport {
+                    screenshotRangeControl
+                } else {
+                    Picker("", selection: $range) {
+                        ForEach(HistoryRange.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .accessibilityLabel("History range")
+                    .frame(width: 250)
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .accessibilityLabel("History range")
-                .frame(width: 250)
             }
 
             if points.isEmpty {
@@ -107,4 +112,25 @@ struct HistoryView: View {
         .padding(20)
         .frame(minWidth: 620, minHeight: 380)
     }
+
+    private var screenshotRangeControl: some View {
+        HStack(spacing: 1) {
+            ForEach(HistoryRange.allCases) { option in
+                Text(option.rawValue)
+                    .font(.caption.weight(option == range ? .semibold : .regular))
+                    .padding(.vertical, 6)
+                    .frame(width: 80)
+                    .background(option == range ? Color(nsColor: .controlBackgroundColor) : Color.clear)
+            }
+        }
+        .padding(2)
+        .background(Color(nsColor: .separatorColor).opacity(0.35))
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .accessibilityHidden(true)
+    }
+}
+
+#Preview("History") {
+    HistoryView(model: PreviewSample.connectedModel())
+        .frame(width: 760, height: 460)
 }
