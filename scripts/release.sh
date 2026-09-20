@@ -130,14 +130,16 @@ Native macOS menu-bar monitor for the Anker Prime Charger 160W (A2687).
 ## Included
 
 - Live total and per-port power, voltage, and current over local Bluetooth LE
-- Port output on/off and shutdown timers (modern AES-GCM session)
-- 24-hour local history chart and diagnostics
+- Charging-mode picker and display settings (brightness, timeout, rotation, language)
+- Port output on/off, shutdown timers, and Shortcuts
+- Firmware, faults, device names, 24-hour history, charger curve, and CSV export
+- Launch at login and optional idle-port notification
 - Native macOS app icon for Finder, Spotlight, and app listings
 - Current Anker-app handshake with AES-CBC fallback from [Anker-BLE](https://github.com/T-REX-XP/Anker-BLE)
 
 ## Not included
 
-- Charging-mode changes, firmware updates, other Anker models
+- Firmware updates, cloud protocol management, other Anker models
 - iOS / Windows / Linux, Home Assistant, or notarized / App Store builds
 
 ## Install
