@@ -270,6 +270,179 @@ final class AnkerProtocolTests: XCTestCase {
         XCTAssertEqual(typedTelemetryUpdate.telemetry?.totalPower ?? 0, 96, accuracy: 0.001)
     }
 
+    func testPortControlTLVLayout() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let offPayload = try AnkerTLV.build(
+            try AnkerSession.portOutputFields(portIndex: 0, isOn: false, now: now)
+        )
+        let offFields = try AnkerTLV.parse(offPayload)
+        XCTAssertEqual(offFields[0xA1], Data([0x21]))
+        XCTAssertEqual(offFields[0xA2], Data([0x01, 0x00]))
+        XCTAssertEqual(offFields[0xA3], Data([0x01, 0x00]))
+        XCTAssertEqual(offFields[0xFE], Data([0x00, 0xF1, 0x53, 0x65]))
+
+        let onPayload = try AnkerTLV.build(
+            try AnkerSession.portOutputFields(portIndex: 2, isOn: true, now: now)
+        )
+        let onFields = try AnkerTLV.parse(onPayload)
+        XCTAssertEqual(onFields[0xA2], Data([0x01, 0x02]))
+        XCTAssertEqual(onFields[0xA3], Data([0x01, 0x01]))
+
+        let cancelPayload = try AnkerTLV.build(
+            try AnkerSession.portShutdownTimerFields(portIndex: 1, seconds: 0, now: now)
+        )
+        let cancelFields = try AnkerTLV.parse(cancelPayload)
+        XCTAssertEqual(cancelFields[0xA2], Data([0x01, 0x01]))
+        XCTAssertEqual(cancelFields[0xA3], Data([0x04, 0x00, 0x00, 0x00, 0x00]))
+
+        let hourPayload = try AnkerTLV.build(
+            try AnkerSession.portShutdownTimerFields(portIndex: 0, seconds: 3_600, now: now)
+        )
+        let hourFields = try AnkerTLV.parse(hourPayload)
+        XCTAssertEqual(hourFields[0xA3], Data([0x04, 0x10, 0x0E, 0x00, 0x00]))
+
+        XCTAssertThrowsError(try AnkerSession.portOutputFields(portIndex: 3, isOn: true))
+        XCTAssertThrowsError(try AnkerSession.portShutdownTimerFields(portIndex: 4, seconds: 60))
+    }
+
+    func testParsePortControlCountdownReport() throws {
+        let fields: [UInt8: Data] = [
+            0xA2: Data([0x01, 0x01]),
+            0xA3: Data([0x04, 0x10, 0x0E, 0x00, 0x00]),
+            0xA4: Data([0x01, 0x01])
+        ]
+        let control = try XCTUnwrap(AnkerSession.parsePortControl(fields))
+        XCTAssertEqual(control.portIndex, 2)
+        XCTAssertEqual(control.remainingSeconds, 3_600)
+        XCTAssertEqual(control.isOutputEnabled, true)
+    }
+
+    func testModernSessionEncodesPortControlPackets() throws {
+        let ready = try completeModernHandshake()
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+
+        let outputPacket = try ready.session.makePortOutput(portIndex: 0, isOn: false, now: now)
+        let outputFrame = try AnkerFrame.decode(outputPacket)
+        XCTAssertEqual(outputFrame.pattern, Data([0x03, 0x00, 0x0F]))
+        XCTAssertEqual(outputFrame.command, 0x4207)
+        let outputPlaintext = try AES128GCM.decrypt(
+            outputFrame.payload,
+            key: ready.key,
+            nonce: ready.nonce,
+            authenticatedData: ready.aad
+        )
+        XCTAssertEqual(try AnkerTLV.parse(outputPlaintext)[0xA2], Data([0x01, 0x00]))
+        XCTAssertEqual(try AnkerTLV.parse(outputPlaintext)[0xA3], Data([0x01, 0x00]))
+
+        let timerPacket = try ready.session.makePortShutdownTimer(portIndex: 2, seconds: 3_600, now: now)
+        let timerFrame = try AnkerFrame.decode(timerPacket)
+        XCTAssertEqual(timerFrame.command, 0x4209)
+        let timerPlaintext = try AES128GCM.decrypt(
+            timerFrame.payload,
+            key: ready.key,
+            nonce: ready.nonce,
+            authenticatedData: ready.aad
+        )
+        XCTAssertEqual(try AnkerTLV.parse(timerPlaintext)[0xA2], Data([0x01, 0x02]))
+        XCTAssertEqual(try AnkerTLV.parse(timerPlaintext)[0xA3], Data([0x04, 0x10, 0x0E, 0x00, 0x00]))
+
+        let ack = try ready.session.receive(makeGCMResponse(
+            command: 0x0207,
+            plaintext: Data(),
+            key: ready.key,
+            nonce: ready.nonce,
+            aad: ready.aad,
+            pattern: Data([0x03, 0x00, 0x0F]),
+            commandFlags: 0x0800
+        ))
+        XCTAssertNil(ack.telemetry)
+        XCTAssertTrue(ack.diagnostics.contains(where: { $0.contains("Port output switch acknowledged") }))
+    }
+
+    func testLegacySessionRejectsPortControl() {
+        let session = AnkerSession()
+        _ = session.startLegacy()
+        XCTAssertFalse(session.supportsPortControl)
+        XCTAssertThrowsError(try session.makePortOutput(portIndex: 0, isOn: false))
+        XCTAssertThrowsError(try session.makePortShutdownTimer(portIndex: 0, seconds: 60))
+    }
+
+    private func completeModernHandshake() throws -> (
+        session: AnkerSession,
+        key: Data,
+        nonce: Data,
+        aad: Data
+    ) {
+        let initialKey = try Data(hex: "b8ff7422955d4eb6d554a2c470280559")
+        let initialNonce = try Data(hex: "6ba3e3f2f3a60f2971ce5d1f")
+        let aad = try Data(hex: "3322110077665544bbaa9988ffeeddcc")
+        let session = AnkerSession()
+        _ = try session.start(now: Date(timeIntervalSince1970: 1_700_000_000))
+
+        _ = try session.receive(makeGCMResponse(
+            command: 0x0001,
+            plaintext: Data(),
+            key: initialKey,
+            nonce: initialNonce,
+            aad: aad
+        ))
+        _ = try session.receive(makeGCMResponse(
+            command: 0x0003,
+            plaintext: Data(),
+            key: initialKey,
+            nonce: initialNonce,
+            aad: aad
+        ))
+        _ = try session.receive(makeGCMResponse(
+            command: 0x0029,
+            plaintext: try AnkerTLV.build([
+                (0xA3, Data("1.2.3".utf8)),
+                (0xA4, Data("SERIAL123456".utf8))
+            ]),
+            key: initialKey,
+            nonce: initialNonce,
+            aad: aad
+        ))
+        let keyExchange = try session.receive(makeGCMResponse(
+            command: 0x0005,
+            plaintext: Data(),
+            key: initialKey,
+            nonce: initialNonce,
+            aad: aad
+        ))
+        let keyExchangeFrame = try AnkerFrame.decode(XCTUnwrap(keyExchange.outboundPackets.first))
+        let clientKeyPayload = try AES128GCM.decrypt(
+            keyExchangeFrame.payload,
+            key: initialKey,
+            nonce: initialNonce,
+            authenticatedData: aad
+        )
+        let clientCoordinates = try XCTUnwrap(AnkerTLV.parse(clientKeyPayload)[0xA1])
+        let devicePrivateKey = P256.KeyAgreement.PrivateKey()
+        let deviceCoordinates = Data(devicePrivateKey.publicKey.x963Representation.dropFirst())
+        _ = try session.receive(makeGCMResponse(
+            command: 0x0021,
+            plaintext: AnkerTLV.build([(0xA1, deviceCoordinates)]),
+            key: initialKey,
+            nonce: initialNonce,
+            aad: aad
+        ))
+
+        var clientPublicRepresentation = Data([0x04])
+        clientPublicRepresentation.append(clientCoordinates)
+        let clientPublicKey = try P256.KeyAgreement.PublicKey(
+            x963Representation: clientPublicRepresentation
+        )
+        let sharedSecret = try devicePrivateKey.sharedSecretFromKeyAgreement(with: clientPublicKey)
+            .withUnsafeBytes { Data($0) }
+        return (
+            session: session,
+            key: Data(sharedSecret.prefix(16)),
+            nonce: Data(sharedSecret.dropFirst(16).prefix(12)),
+            aad: aad
+        )
+    }
+
     private func makeGCMResponse(
         command: UInt16,
         plaintext: Data,

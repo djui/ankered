@@ -6,6 +6,7 @@ The app connects locally over Bluetooth LE and displays:
 
 - Total and per-port power
 - Per-port voltage and current
+- Per-port output shutdown and a shutdown timer
 - All three port values directly in the menu-bar title
 - Generic USB-C 1, 2, and 3 labels
 - A rolling 24-hour charging-power graph and delivered-energy estimate
@@ -40,9 +41,9 @@ xcodebuild -project AnkerPower.xcodeproj -scheme AnkerPower \
 
 ## Protocol status
 
-This is an unofficial, read-only implementation. The A2687 BLE protocol is not a public Anker API and may change with charger firmware. The app first performs the current app-compatible, ephemeral P-256 ECDH/AES-GCM session and polls `0x020A`/`0x0200`. If that handshake does not answer, it falls back to the older AES-CBC flow and `0x4200` telemetry subscription documented by the MIT-licensed `T-REX-XP/Anker-BLE` proof of concept.
+This is an unofficial implementation. The A2687 BLE protocol is not a public Anker API and may change with charger firmware. The app first performs the current app-compatible, ephemeral P-256 ECDH/AES-GCM session and polls `0x020A`/`0x0200`. If that handshake does not answer, it falls back to the older AES-CBC flow and `0x4200` telemetry subscription documented by the MIT-licensed `T-REX-XP/Anker-BLE` proof of concept.
 
-No charger-control or firmware-update commands are included.
+Port control uses the official minicharge commands `0x0207` (output on/off) and `0x0209` (shutdown timer in seconds). Those writes are available only on the AES-GCM session. Firmware-update commands are not included.
 
 ## Privacy
 
