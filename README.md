@@ -6,8 +6,9 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![macOS 14+](https://img.shields.io/badge/macOS-14%2B-black)](https://github.com/djui/ankered)
+[![Website](https://img.shields.io/badge/Website-djui.github.io%2Fankered-3ea8ff)](https://djui.github.io/ankered/)
 
-Unofficial native **macOS menu-bar** monitor for the **Anker Prime Charger 160W with Smart Display (A2687)**.
+Unofficial native **macOS menu-bar** monitor for the **Anker Prime Charger 160W with Smart Display (A2687)**. Product page: [djui.github.io/ankered](https://djui.github.io/ankered/).
 
 The app lives in the menu bar (`LSUIElement`). It connects locally over Bluetooth LE, shows live power, and can change charging mode, display settings, and individual USB-C ports. It is not affiliated with Anker Innovations.
 

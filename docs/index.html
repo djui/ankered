@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Anker Power — Your Anker Prime 160W, in the Mac menu bar</title>
+  <meta name="description" content="Unofficial native macOS menu-bar monitor for the Anker Prime Charger 160W (A2687). Live local BLE power, per-port control, and charger settings — no cloud, no Anker account.">
+  <link rel="icon" href="assets/favicon.png" type="image/png">
+  <link rel="apple-touch-icon" href="assets/icon.png">
+  <meta name="theme-color" content="#0b0d12">
+  <meta property="og:title" content="Anker Power">
+  <meta property="og:description" content="Live watts. Local control. No cloud. A native macOS menu-bar app for the Anker Prime 160W.">
+  <meta property="og:image" content="assets/icon.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="bg-glow" aria-hidden="true"></div>
+
+  <header class="nav">
+    <div class="nav-inner">
+      <a class="nav-brand" href="#top">
+        <img src="assets/icon.png" width="32" height="32" alt="">
+        <span>Anker Power</span>
+      </a>
+      <nav class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#history">History</a>
+        <a href="#privacy">Privacy</a>
+        <a href="https://github.com/djui/ankered">GitHub</a>
+        <a class="btn btn-primary btn-small" href="https://github.com/djui/ankered/releases/latest">Download</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">macOS 14+ · A2687 only · local BLE</p>
+        <h1>Your Anker Prime 160W,<br>in the Mac menu bar.</h1>
+        <p class="lede">Live watts, per-port control, and charger settings over Bluetooth LE. No Anker account. No cloud. No network requests.</p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="https://github.com/djui/ankered/releases/latest">Download 1.2.0</a>
+          <a class="btn btn-ghost" href="https://github.com/djui/ankered">View on GitHub</a>
+        </div>
+        <ul class="hero-pills">
+          <li>Menu-bar native</li>
+          <li>Open source MIT</li>
+          <li>Unofficial</li>
+        </ul>
+      </div>
+
+      <div class="hero-visual">
+        <div class="hero-glow" aria-hidden="true"></div>
+        <div class="watt-orb">
+          <img class="hero-icon" src="assets/icon.png" width="88" height="88" alt="Anker Power app icon">
+          <p class="watt-readout">
+            <span class="watt-value" data-count="84">0</span><span class="watt-unit">W</span>
+          </p>
+          <p class="watt-caption">Total output</p>
+        </div>
+        <div class="port-chips">
+          <div class="port-chip">
+            <span class="port-dot c1"></span>
+            <span>C1 MacBook</span>
+            <strong>64 W</strong>
+          </div>
+          <div class="port-chip">
+            <span class="port-dot c2"></span>
+            <span>C2 iPhone</span>
+            <strong>20 W</strong>
+          </div>
+          <div class="port-chip">
+            <span class="port-dot c3"></span>
+            <span>C3</span>
+            <strong>0 W</strong>
+          </div>
+        </div>
+        <figure class="window window-hero">
+          <div class="window-chrome">
+            <span class="traffic"></span>
+            <figcaption>Menu bar</figcaption>
+          </div>
+          <button type="button" class="shot-btn" data-lightbox="screenshots/menu.png" data-caption="Menu bar popover">
+            <img src="screenshots/menu.png" alt="Menu bar popover showing 84 W total, nicknamed ports, and live volts and amps">
+          </button>
+        </figure>
+      </div>
+    </section>
+
+    <section class="proof" id="gallery" aria-label="App screenshots">
+      <div class="proof-grid">
+        <button type="button" class="proof-card" data-reveal data-lightbox="screenshots/menu.png" data-caption="Live menu bar popover">
+          <figure class="window">
+            <div class="window-chrome"><span class="traffic"></span><figcaption>Menu</figcaption></div>
+            <img src="screenshots/menu.png" alt="Menu bar popover">
+          </figure>
+          <span>Live watts</span>
+        </button>
+        <button type="button" class="proof-card" data-reveal data-lightbox="screenshots/settings.png" data-caption="Display, custom split, and Mac preferences">
+          <figure class="window">
+            <div class="window-chrome"><span class="traffic"></span><figcaption>Settings</figcaption></div>
+            <img src="screenshots/settings.png" alt="Settings popover">
+          </figure>
+          <span>Modes &amp; display</span>
+        </button>
+        <button type="button" class="proof-card" data-reveal data-lightbox="screenshots/history.png" data-caption="Charging history chart">
+          <figure class="window">
+            <div class="window-chrome"><span class="traffic"></span><figcaption>History</figcaption></div>
+            <img src="screenshots/history.png" alt="Charging history window">
+          </figure>
+          <span>24-hour history</span>
+        </button>
+        <button type="button" class="proof-card" data-reveal data-lightbox="screenshots/diagnostics.png" data-caption="Connection diagnostics">
+          <figure class="window">
+            <div class="window-chrome"><span class="traffic"></span><figcaption>Diagnostics</figcaption></div>
+            <img src="screenshots/diagnostics.png" alt="Connection diagnostics window">
+          </figure>
+          <span>Local diagnostics</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="feature split" id="features">
+      <figure class="window" data-reveal>
+        <div class="window-chrome"><span class="traffic"></span><figcaption>C1 · C2 · C3</figcaption></div>
+        <button type="button" class="shot-btn" data-lightbox="screenshots/menu.png" data-caption="Per-port live power">
+          <img src="screenshots/menu.png" alt="Per-port power, cable rating, charging profile, and shutdown timer">
+        </button>
+      </figure>
+      <div class="feature-copy" data-reveal>
+        <p class="eyebrow">Live monitoring</p>
+        <h2>Every port, at a glance.</h2>
+        <p>Click the bolt in the menu bar. Total watts stay in the status item while you work. The popover lists C1–C3 with live watts, volts, and amps.</p>
+        <ul class="feature-list">
+          <li>
+            <strong>Cable &amp; profile</strong>
+            E-Marker ratings, PD Fast Charging, and connected device names from a local USB VID/PID table.
+          </li>
+          <li>
+            <strong>Port nicknames</strong>
+            Label C1 as MacBook, C2 as iPhone — stored only on this Mac.
+          </li>
+          <li>
+            <strong>Shutdown timers</strong>
+            1h / 2h / 3h presets or a custom countdown, plus output on/off with a confirm step.
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="feature split split-reverse">
+      <div class="feature-copy" data-reveal>
+        <p class="eyebrow">Power allocation</p>
+        <h2>160 W, split your way.</h2>
+        <p>Switch AI 2.0, C1 Priority, Dual Laptop, or a Custom watt split without picking up your phone.</p>
+        <div class="mode-pills">
+          <span class="mode-pill is-active">AI 2.0</span>
+          <span class="mode-pill">C1 Priority</span>
+          <span class="mode-pill">Dual Laptop</span>
+          <span class="mode-pill">Custom</span>
+        </div>
+        <div class="split-bar" aria-label="Custom split example: 80 watts, 60 watts, and 20 watts">
+          <div class="split-seg c1" style="--share: 80">
+            <span>C1</span>
+            <strong>80 W</strong>
+          </div>
+          <div class="split-seg c2" style="--share: 60">
+            <span>C2</span>
+            <strong>60 W</strong>
+          </div>
+          <div class="split-seg c3" style="--share: 20">
+            <span>C3</span>
+            <strong>20 W</strong>
+          </div>
+        </div>
+        <p class="split-note">Each port 0 or 15–140 W, 160 W total. Display brightness, timeout, language, and rotation live in the same settings pane.</p>
+      </div>
+      <figure class="window" data-reveal>
+        <div class="window-chrome"><span class="traffic"></span><figcaption>Settings</figcaption></div>
+        <button type="button" class="shot-btn" data-lightbox="screenshots/settings.png" data-caption="Display settings and custom watt split">
+          <img src="screenshots/settings.png" alt="Settings with brightness, timeout, language, and an 80 / 60 / 20 watt custom split">
+        </button>
+      </figure>
+    </section>
+
+    <section class="history-block" id="history">
+      <div class="history-intro" data-reveal>
+        <p class="eyebrow">Energy</p>
+        <h2>See the last 24 hours on this Mac.</h2>
+        <p>Rolling local samples, an optional charger-side curve, a watt-hour estimate, and CSV export. Yellow total, blue C1, green C2, orange C3.</p>
+        <ul class="callouts">
+          <li>1 hour · 6 hours · 24 hours</li>
+          <li>This Mac or charger curve</li>
+          <li>Export CSV · stays local</li>
+        </ul>
+      </div>
+      <figure class="window window-wide" data-reveal>
+        <div class="window-chrome"><span class="traffic"></span><figcaption>Charging history</figcaption></div>
+        <button type="button" class="shot-btn" data-lightbox="screenshots/history.png" data-caption="Charging history">
+          <img src="screenshots/history.png" alt="Charging history chart with total, C1, C2, and C3 series">
+        </button>
+      </figure>
+    </section>
+
+    <section class="privacy-block" id="privacy">
+      <div class="card-grid">
+        <article class="glass-card" data-reveal>
+          <p class="eyebrow">Privacy</p>
+          <h2>Stays on this Mac.</h2>
+          <p>All charger telemetry and history stay on-device. Up to 24 hours of samples and last-known charger identity live in Application Support. Port nicknames live in UserDefaults. The app makes no network requests.</p>
+          <ul class="feature-list">
+            <li><strong>No Anker account</strong> and no cloud protocol management.</li>
+            <li><strong>Diagnostics Copy All</strong> omits serials, session keys, and decrypted payloads.</li>
+          </ul>
+        </article>
+        <article class="glass-card" data-reveal>
+          <p class="eyebrow">Mac convenience</p>
+          <h2>Shortcuts, login, idle notify.</h2>
+          <p>Open at login. Get a notification when a port sits at 0 W for 10 minutes. Use Shortcuts to turn C1–C3 on or off while the app is running.</p>
+          <ul class="feature-list">
+            <li><strong>Reconnect</strong> remembers the last charger UUID.</li>
+            <li><strong>Fault banners</strong> for over-temperature and port abnormalities.</li>
+          </ul>
+        </article>
+      </div>
+      <figure class="window window-wide" data-reveal>
+        <div class="window-chrome"><span class="traffic"></span><figcaption>Connection diagnostics</figcaption></div>
+        <button type="button" class="shot-btn" data-lightbox="screenshots/diagnostics.png" data-caption="Privacy-aware diagnostics log">
+          <img src="screenshots/diagnostics.png" alt="Diagnostics log of the local BLE handshake with payloads omitted">
+        </button>
+      </figure>
+    </section>
+
+    <section class="download-block" id="download">
+      <div class="download-panel">
+        <img src="assets/icon.png" width="72" height="72" alt="">
+        <h2>Get Anker Power</h2>
+        <p>Download <code>AnkerPower-1.2.0.zip</code> from the latest GitHub Release, unzip it, and move the app to <code>/Applications</code>.</p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="https://github.com/djui/ankered/releases/latest">Download for Mac</a>
+          <a class="btn btn-ghost" href="https://github.com/djui/ankered#build-from-source">Build from source</a>
+        </div>
+        <ul class="req-list">
+          <li>macOS 14 or newer</li>
+          <li>Anker Prime Charger 160W, model <strong>A2687</strong></li>
+          <li>Bluetooth permission</li>
+          <li>Official Anker app disconnected from the charger</li>
+        </ul>
+        <p class="gatekeeper">Builds are ad-hoc signed and not notarized. On first launch, right-click the app and choose <strong>Open</strong>, then confirm.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-row">
+      <a class="nav-brand" href="#top">
+        <img src="assets/icon.png" width="28" height="28" alt="">
+        <span>Anker Power</span>
+      </a>
+      <p>MIT License · <a href="https://github.com/djui/ankered">github.com/djui/ankered</a></p>
+    </div>
+    <p class="disclaimer">Unofficial research software. Anker is a trademark of Anker Innovations. This project is not affiliated with, endorsed by, or sponsored by Anker Innovations. Use at your own risk. Keep the official Anker app disconnected while this app holds the BLE session.</p>
+    <p class="credits">Protocol research credit: <a href="https://github.com/T-REX-XP/Anker-BLE">Anker-BLE</a> and public notes from <a href="https://github.com/Hyper-Beast/Anker_Prime_160W_WebBLE">Anker Prime 160W WebBLE</a>.</p>
+  </footer>
+
+  <div class="lightbox" id="lightbox" hidden>
+    <button type="button" class="lightbox-close" aria-label="Close screenshot">Close</button>
+    <figure>
+      <img alt="">
+      <figcaption></figcaption>
+    </figure>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
