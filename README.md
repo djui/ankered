@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="AnkerPower/Assets.xcassets/AppIcon.appiconset/AppIcon-256.png" alt="Anker Power app icon" width="128" height="128">
+</p>
+
 # Anker Power (ankered)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -47,7 +51,7 @@ The app lives in the menu bar (`LSUIElement`). It connects locally over Bluetoot
 
 ## Install
 
-Download `AnkerPower-1.0.0.zip` from the [latest GitHub Release](https://github.com/djui/ankered/releases/latest), unzip it, and move `AnkerPower.app` to `/Applications`.
+Download `AnkerPower-1.1.0.zip` from the [latest GitHub Release](https://github.com/djui/ankered/releases/latest), unzip it, and move `AnkerPower.app` to `/Applications`.
 
 Builds are ad-hoc signed and **not notarized**. On first launch, right-click the app and choose **Open**, then confirm. After that, Spotlight and Finder open it normally.
 
@@ -82,7 +86,7 @@ Cut a local archive (and optionally a GitHub Release) with:
 
 ```sh
 ./scripts/release.sh            # zip only
-./scripts/release.sh --publish 1.0.0
+./scripts/release.sh --publish 1.1.0
 ```
 
 ## Privacy
