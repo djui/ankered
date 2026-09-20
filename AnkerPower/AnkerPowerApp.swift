@@ -37,17 +37,23 @@ struct AnkerPowerApp: App {
 
 private struct MenuBarStatusView: View {
     @ObservedObject var model: AppModel
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        if model.connectionState.isConnected {
-            HStack(spacing: 3) {
-                Image(systemName: "bolt.square.fill")
-                Text(model.menuBarTitle)
-            }
-            .font(.system(.body, design: .default))
-        } else {
-            Image(systemName: "bolt.square")
+        Group {
+            if model.connectionState.isConnected {
+                HStack(spacing: 3) {
+                    Image(systemName: "bolt.square.fill")
+                    Text(model.menuBarTitle)
+                }
                 .font(.system(.body, design: .default))
+            } else {
+                Image(systemName: "bolt.square")
+                    .font(.system(.body, design: .default))
+            }
+        }
+        .onAppear {
+            StatusItemContextMenu.shared.install(model: model, openWindow: openWindow)
         }
     }
 }

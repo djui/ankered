@@ -20,6 +20,7 @@
 		A0010000000000000000000D /* DiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00100000000000000000010 /* DiagnosticsView.swift */; };
 		A0010000000000000000000E /* PreviewSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00100000000000000000011 /* PreviewSupport.swift */; };
 		A0010000000000000000000F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B00100000000000000000012 /* Assets.xcassets */; };
+		A00100000000000000000013 /* StatusItemContextMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00100000000000000000013 /* StatusItemContextMenu.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -49,6 +50,7 @@
 		B00100000000000000000010 /* DiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsView.swift; sourceTree = "<group>"; };
 		B00100000000000000000011 /* PreviewSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewSupport.swift; sourceTree = "<group>"; };
 		B00100000000000000000012 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B00100000000000000000013 /* StatusItemContextMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusItemContextMenu.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -76,6 +78,7 @@
 				B00100000000000000000006 /* HistoryStore.swift */,
 				B00100000000000000000007 /* AppModel.swift */,
 				B00100000000000000000008 /* MenuContentView.swift */,
+				B00100000000000000000013 /* StatusItemContextMenu.swift */,
 				B00100000000000000000009 /* HistoryView.swift */,
 				B0010000000000000000000F /* DiagnosticLog.swift */,
 				B00100000000000000000010 /* DiagnosticsView.swift */,
@@ -181,6 +184,7 @@
 				A00100000000000000000006 /* HistoryStore.swift in Sources */,
 				A00100000000000000000007 /* AppModel.swift in Sources */,
 				A00100000000000000000008 /* MenuContentView.swift in Sources */,
+				A00100000000000000000013 /* StatusItemContextMenu.swift in Sources */,
 				A00100000000000000000009 /* HistoryView.swift in Sources */,
 				A0010000000000000000000C /* DiagnosticLog.swift in Sources */,
 				A0010000000000000000000D /* DiagnosticsView.swift in Sources */,

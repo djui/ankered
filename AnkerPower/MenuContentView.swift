@@ -32,25 +32,11 @@ struct MenuContentView: View {
         }
         .padding(14)
         .frame(width: 280)
-        .confirmationDialog(
-            "Confirm",
-            isPresented: Binding(
-                get: { confirmOffPort != nil },
-                set: { if !$0 { confirmOffPort = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("OK") {
-                if let index = confirmOffPort {
-                    model.setPortOutput(index: index, enabled: false)
-                }
-                confirmOffPort = nil
-            }
-            Button("Cancel", role: .cancel) {
-                confirmOffPort = nil
-            }
-        } message: {
-            Text("Are you sure you want to turn off output on this port?")
+        .overlay {
+            confirmOverlay
+        }
+        .onAppear {
+            StatusItemContextMenu.shared.install(model: model, openWindow: openWindow)
         }
         .popover(isPresented: Binding(
             get: { customTimerPort != nil },
@@ -273,12 +259,12 @@ struct MenuContentView: View {
                 }
                 .help("Reconnect")
                 Spacer(minLength: 0)
-                Button { openAuxiliaryWindow(id: "diagnostics", title: "Connection Diagnostics") } label: {
+                Button { AuxiliaryWindow.open(.diagnostics, using: openWindow) } label: {
                     Label("Diagnostics", systemImage: "waveform.path.ecg")
                 }
                 .help("Diagnostics")
                 Spacer(minLength: 0)
-                Button { openAuxiliaryWindow(id: "history", title: "Charging History") } label: {
+                Button { AuxiliaryWindow.open(.history, using: openWindow) } label: {
                     Label("History", systemImage: "chart.xyaxis.line")
                 }
                 .help("Charging history")
@@ -295,22 +281,46 @@ struct MenuContentView: View {
         .controlSize(.small)
     }
 
-    private func openAuxiliaryWindow(id: String, title: String) {
-        openWindow(id: id)
+    @ViewBuilder
+    private var confirmOverlay: some View {
+        if let portIndex = confirmOffPort {
+            ZStack {
+                Color.black.opacity(0.4)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        confirmOffPort = nil
+                    }
 
-        // Menu-bar-only apps do not always become active when SwiftUI creates a
-        // secondary window. Activate and raise it after the scene has materialized.
-        for delay in [0.0, 0.1, 0.3] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                NSApplication.shared.activate(ignoringOtherApps: true)
-                guard let window = NSApplication.shared.windows.first(where: {
-                    $0.identifier?.rawValue == id || $0.title == title
-                }) else { return }
-                if window.isMiniaturized {
-                    window.deminiaturize(nil)
+                VStack(spacing: 12) {
+                    Text("Confirm")
+                        .font(.headline)
+                    Text("Are you sure you want to turn off output on this port?")
+                        .font(.subheadline)
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.secondary)
+
+                    HStack(spacing: 10) {
+                        Button("Cancel") {
+                            confirmOffPort = nil
+                        }
+                        .keyboardShortcut(.cancelAction)
+                        .buttonStyle(.bordered)
+                        .frame(maxWidth: .infinity)
+
+                        Button("OK") {
+                            model.setPortOutput(index: portIndex, enabled: false)
+                            confirmOffPort = nil
+                        }
+                        .keyboardShortcut(.defaultAction)
+                        .buttonStyle(.borderedProminent)
+                        .frame(maxWidth: .infinity)
+                    }
+                    .controlSize(.regular)
                 }
-                window.makeKeyAndOrderFront(nil)
-                window.orderFrontRegardless()
+                .padding(18)
+                .frame(width: 236)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .shadow(color: .black.opacity(0.25), radius: 16, y: 4)
             }
         }
     }

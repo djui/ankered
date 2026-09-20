@@ -67,6 +67,8 @@ The app appears only in the menu bar. Click the bolt icon:
 - **History** — last 1 / 6 / 24 hours, stored on this Mac
 - **Quit**
 
+Right-click the bolt icon for Reconnect, Charging History, Diagnostics, and Quit.
+
 If a connection fails, open Diagnostics and use **Copy All** when filing an issue.
 
 ## Build from source
