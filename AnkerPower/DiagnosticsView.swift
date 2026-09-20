@@ -14,6 +14,12 @@ struct DiagnosticsView: View {
                     Text("Packet payloads and session keys are intentionally omitted.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    if !model.identity.isEmpty {
+                        Text(identitySummary)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
                 }
                 Spacer()
                 Button("Reconnect") { model.reconnect() }
@@ -47,6 +53,20 @@ struct DiagnosticsView: View {
             }
         }
         .frame(minWidth: 760, minHeight: 440)
+    }
+
+    private var identitySummary: String {
+        var parts: [String] = []
+        if let firmware = model.identity.firmwareLabel {
+            parts.append("Firmware \(firmware)")
+        }
+        if let serial = model.identity.serialNumber, !serial.isEmpty {
+            parts.append("Serial \(serial)")
+        }
+        if let mac = model.identity.macAddress, !mac.isEmpty {
+            parts.append("MAC \(mac)")
+        }
+        return parts.joined(separator: " · ")
     }
 
     private var diagnosticList: some View {

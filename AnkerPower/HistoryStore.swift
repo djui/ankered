@@ -47,6 +47,21 @@ final class HistoryStore: ObservableObject {
         scheduleSave()
     }
 
+    func csvString() -> String {
+        var lines = ["timestamp,total_w,c1_w,c2_w,c3_w"]
+        let formatter = ISO8601DateFormatter()
+        for sample in samples {
+            lines.append([
+                formatter.string(from: sample.timestamp),
+                String(format: "%.2f", sample.total),
+                String(format: "%.2f", sample.port1),
+                String(format: "%.2f", sample.port2),
+                String(format: "%.2f", sample.port3)
+            ].joined(separator: ","))
+        }
+        return lines.joined(separator: "\n") + "\n"
+    }
+
     var recordedEnergyWh: Double {
         guard samples.count > 1 else { return 0 }
         return zip(samples, samples.dropFirst()).reduce(0) { result, pair in

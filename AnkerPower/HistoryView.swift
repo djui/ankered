@@ -1,10 +1,13 @@
+import AppKit
 import Charts
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct HistoryView: View {
     @ObservedObject var model: AppModel
     @ObservedObject private var history: HistoryStore
     @State private var range: HistoryRange = .hour
+    @State private var source: HistorySource = .mac
     @Environment(\.isScreenshotExport) private var isScreenshotExport
 
     init(model: AppModel) {
@@ -27,6 +30,13 @@ struct HistoryView: View {
         }
     }
 
+    private enum HistorySource: String, CaseIterable, Identifiable {
+        case mac = "This Mac"
+        case charger = "Charger"
+
+        var id: Self { self }
+    }
+
     private struct ChartPoint: Identifiable {
         let id: String
         let timestamp: Date
@@ -39,7 +49,7 @@ struct HistoryView: View {
         return history.samples.filter { $0.timestamp >= cutoff }
     }
 
-    private var points: [ChartPoint] {
+    private var macPoints: [ChartPoint] {
         visibleSamples.flatMap { sample in
             [
                 ChartPoint(id: "\(sample.id)-total", timestamp: sample.timestamp, series: "Total", power: sample.total),
@@ -50,34 +60,74 @@ struct HistoryView: View {
         }
     }
 
+    private var chargerPoints: [ChartPoint] {
+        guard let chargerHistory = model.chargerHistory else { return [] }
+        return chargerHistory.ports.flatMap { port in
+            port.powers.enumerated().map { index, power in
+                ChartPoint(
+                    id: "charger-\(port.index)-\(index)",
+                    timestamp: chargerHistory.capturedAt.addingTimeInterval(TimeInterval(index)),
+                    series: "C\(port.index)",
+                    power: power
+                )
+            }
+        }
+    }
+
+    private var points: [ChartPoint] {
+        source == .charger ? chargerPoints : macPoints
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Charging history")
                         .font(.title2.bold())
-                    Text("Up to 24 hours are stored locally on this Mac.")
+                    Text(source == .charger
+                         ? "Curve captured from the charger this session."
+                         : "Up to 24 hours are stored locally on this Mac.")
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                if isScreenshotExport {
-                    screenshotRangeControl
-                } else {
-                    Picker("", selection: $range) {
-                        ForEach(HistoryRange.allCases) { Text($0.rawValue).tag($0) }
+                VStack(alignment: .trailing, spacing: 8) {
+                    if model.chargerHistory != nil {
+                        if isScreenshotExport {
+                            screenshotSourceControl
+                        } else {
+                            Picker("", selection: $source) {
+                                ForEach(HistorySource.allCases) { Text($0.rawValue).tag($0) }
+                            }
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
+                            .frame(width: 180)
+                        }
                     }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .accessibilityLabel("History range")
-                    .frame(width: 250)
+                    if source == .mac {
+                        if isScreenshotExport {
+                            screenshotRangeControl
+                        } else {
+                            Picker("", selection: $range) {
+                                ForEach(HistoryRange.allCases) { Text($0.rawValue).tag($0) }
+                            }
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
+                            .accessibilityLabel("History range")
+                            .frame(width: 250)
+                        }
+                    }
                 }
             }
 
             if points.isEmpty {
                 ContentUnavailableView(
-                    "No charging data yet",
+                    source == .charger ? "No charger curve yet" : "No charging data yet",
                     systemImage: "chart.xyaxis.line",
-                    description: Text("Connect to the charger and the graph will update automatically.")
+                    description: Text(
+                        source == .charger
+                            ? "The charger-side history is requested once after connecting."
+                            : "Connect to the charger and the graph will update automatically."
+                    )
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -106,11 +156,29 @@ struct HistoryView: View {
                 )
                 .foregroundStyle(.secondary)
                 Spacer()
+                Button("Export CSV") { exportCSV() }
+                    .disabled(history.samples.isEmpty)
                 Button("Clear History", role: .destructive) { history.clear() }
             }
         }
         .padding(20)
         .frame(minWidth: 620, minHeight: 380)
+    }
+
+    private var screenshotSourceControl: some View {
+        HStack(spacing: 1) {
+            ForEach(HistorySource.allCases) { option in
+                Text(option.rawValue)
+                    .font(.caption.weight(option == source ? .semibold : .regular))
+                    .padding(.vertical, 6)
+                    .frame(width: 88)
+                    .background(option == source ? Color(nsColor: .controlBackgroundColor) : Color.clear)
+            }
+        }
+        .padding(2)
+        .background(Color(nsColor: .separatorColor).opacity(0.35))
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .accessibilityHidden(true)
     }
 
     private var screenshotRangeControl: some View {
@@ -127,6 +195,17 @@ struct HistoryView: View {
         .background(Color(nsColor: .separatorColor).opacity(0.35))
         .clipShape(RoundedRectangle(cornerRadius: 7))
         .accessibilityHidden(true)
+    }
+
+    private func exportCSV() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.commaSeparatedText]
+        panel.nameFieldStringValue = "anker-power-history.csv"
+        panel.canCreateDirectories = true
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            try? history.csvString().write(to: url, atomically: true, encoding: .utf8)
+        }
     }
 }
 

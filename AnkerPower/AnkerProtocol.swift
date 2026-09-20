@@ -309,6 +309,8 @@ struct AnkerSessionUpdate {
     var identity: ChargerIdentity?
     var telemetry: ChargerTelemetry?
     var portControl: PortControlUpdate?
+    var settings: ChargerSettingsUpdate?
+    var portHistory: ChargerPortHistory?
     var becameReady = false
     var diagnostics: [String] = []
 }
@@ -418,8 +420,10 @@ final class LegacyAnkerSession {
                 )
                 let fields = try AnkerTLV.parse(plaintext)
                 if let telemetry = Self.parseTelemetry(fields) {
+                    let command = frame.command & 0x37FF
                     return AnkerSessionUpdate(
                         telemetry: telemetry,
+                        settings: AnkerSession.parseSettings(fields, command: command),
                         diagnostics: ["AES-CBC telemetry response 0x\(String(format: "%04X", frame.command))"]
                     )
                 }
@@ -556,6 +560,7 @@ final class LegacyAnkerSession {
             case 0x00: ports[offset].cableInfo = "3A–60W Max"
             case 0x01: ports[offset].cableInfo = "5A–100W Max"
             case 0x02: ports[offset].cableInfo = "EPR–240W Max"
+            case 0x03: ports[offset].cableInfo = nil
             default: break
             }
 
@@ -567,23 +572,52 @@ final class LegacyAnkerSession {
             }
         }
 
-        // Newer A2687 firmware reports three 32-bit brand codes and three
-        // model codes in typed byte arrays. Until a model code is known, the
-        // brand-level label is still useful and avoids inventing a device name.
-        guard let brandPayload = typedByteArray(fields[0xB4]),
-              let modelPayload = typedByteArray(fields[0xB5]),
-              brandPayload.count >= 12,
-              modelPayload.count >= 12 else { return }
+        applyConnectedDevices(fields, to: &ports)
+    }
 
-        let brands = (0..<3).map { littleEndian32(brandPayload, at: $0 * 4) }
-        guard brands.contains(where: { $0 != 0 }),
-              brands.allSatisfy({ $0 <= 0x13 }) else { return }
+    private static func applyConnectedDevices(
+        _ fields: [UInt8: Data],
+        to ports: inout [PortTelemetry]
+    ) {
+        let isAIMode = chargingMode(fields) == .ai2
+        guard let identityPayload = typedByteArray(fields[0xB4]),
+              identityPayload.count >= 12 else { return }
+
+        let brands = (0..<3).map { littleEndian32(identityPayload, at: $0 * 4) }
+        let looksLikeBrandCodes = brands.contains(where: { $0 != 0 })
+            && brands.allSatisfy { $0 <= 0x13 }
+
+        if looksLikeBrandCodes {
+            let models: [UInt32] = {
+                guard let modelPayload = typedByteArray(fields[0xB5]),
+                      modelPayload.count >= 12 else {
+                    return Array(repeating: 0, count: 3)
+                }
+                return (0..<3).map { littleEndian32(modelPayload, at: $0 * 4) }
+            }()
+            for offset in 0..<3 {
+                guard let brandName = DeviceCatalog.brandName(brands[offset]) else { continue }
+                ports[offset].deviceInfo = DeviceCatalog.deviceLabel(
+                    brand: brandName,
+                    model: models[offset]
+                )
+            }
+            return
+        }
 
         for offset in 0..<3 {
-            let brand = brands[offset]
-            let model = littleEndian32(modelPayload, at: offset * 4)
-            guard let brandName = deviceBrandName(brand) else { continue }
-            ports[offset].deviceInfo = deviceName(brand: brandName, model: model)
+            let vid = littleEndian16(identityPayload, at: offset * 4)
+            let pid = littleEndian16(identityPayload, at: offset * 4 + 2)
+            if let ankerProtocol = DeviceCatalog.ankerProtocolLabel(
+                vid: vid,
+                pid: pid,
+                isAIMode: isAIMode
+            ) {
+                ports[offset].chargingInfo = ankerProtocol
+            }
+            if let label = DeviceCatalog.usbDeviceLabel(vid: vid, pid: pid) {
+                ports[offset].deviceInfo = label
+            }
         }
     }
 
@@ -601,23 +635,6 @@ final class LegacyAnkerSession {
     private static func typedByteArray(_ data: Data?) -> Data? {
         guard let data, data.first == 0x04, data.count > 1 else { return nil }
         return Data(data.dropFirst())
-    }
-
-    private static func deviceBrandName(_ code: UInt32) -> String? {
-        [
-            0x01: "Apple", 0x02: "Samsung", 0x03: "Xiaomi", 0x04: "Huawei",
-            0x05: "Google", 0x06: "LG", 0x07: "IDT", 0x08: "TI",
-            0x09: "YBZ", 0x0A: "Anker", 0x0B: "Honor", 0x0C: "HP",
-            0x0D: "Dell", 0x0E: "Lenovo", 0x0F: "Microsoft", 0x10: "ASUS",
-            0x11: "ASUS", 0x12: "MSI", 0x13: "Razer"
-        ][code]
-    }
-
-    private static func deviceName(brand: String, model: UInt32) -> String {
-        // Model IDs are vendor-specific and may change with charger firmware.
-        // Keep the raw ID out of the UI until a verified mapping exists.
-        _ = model
-        return "\(brand) Device"
     }
 
     private static func littleEndian16(_ data: Data, at index: Int) -> UInt16 {
@@ -776,16 +793,6 @@ private final class ModernAnkerSession {
                     diagnostics: ["AES-GCM session acknowledgement 0x\(Self.hex4(command))"]
                 )
             }
-            if command == 0x0207 {
-                return AnkerSessionUpdate(
-                    diagnostics: ["Port output switch acknowledged"]
-                )
-            }
-            if command == 0x0209 {
-                return AnkerSessionUpdate(
-                    diagnostics: ["Port shutdown timer acknowledged"]
-                )
-            }
 
             var variants: [(dialect: String, fields: [UInt8: Data])] = []
             if let fields = try? AnkerTLV.parse(decoded.data) {
@@ -800,9 +807,14 @@ private final class ModernAnkerSession {
                     .sorted { $0.key < $1.key }
                     .map { "\(String(format: "%02X", $0.key)):\($0.value.count)" }
                     .joined(separator: ",")
+                var update = AnkerSessionUpdate()
+                var diagnostics: [String] = []
+
                 if let telemetry = LegacyAnkerSession.parseTelemetry(variant.fields) {
                     lastSessionDecryptFailureAt = nil
-                    var diagnostics = ["Decoded \(decoded.source) \(variant.dialect) telemetry 0x\(Self.hex4(command)) TLVs [\(fieldShape)]"]
+                    diagnostics.append(
+                        "Decoded \(decoded.source) \(variant.dialect) telemetry 0x\(Self.hex4(command)) TLVs [\(fieldShape)]"
+                    )
                     if !didLogFieldSnapshot {
                         didLogFieldSnapshot = true
                         let snapshot = variant.fields
@@ -811,23 +823,49 @@ private final class ModernAnkerSession {
                             .joined(separator: ",")
                         diagnostics.append("Telemetry field snapshot [\(snapshot)]")
                     }
-                    return AnkerSessionUpdate(
-                        telemetry: telemetry,
-                        diagnostics: diagnostics
-                    )
+                    update.telemetry = telemetry
                 }
+
+                let settings = AnkerSession.parseSettings(variant.fields, command: command)
+                if !settings.isEmpty {
+                    lastSessionDecryptFailureAt = nil
+                    diagnostics.append(
+                        "Decoded \(decoded.source) \(variant.dialect) settings 0x\(Self.hex4(command))"
+                    )
+                    update.settings = settings
+                }
+
                 if command == 0x0307 || command == 0x0308,
                    let control = AnkerSession.parsePortControl(variant.fields) {
                     lastSessionDecryptFailureAt = nil
-                    return AnkerSessionUpdate(
-                        portControl: control,
-                        diagnostics: ["Decoded \(decoded.source) \(variant.dialect) port control 0x\(Self.hex4(command)) TLVs [\(fieldShape)]"]
+                    diagnostics.append(
+                        "Decoded \(decoded.source) \(variant.dialect) port control 0x\(Self.hex4(command)) TLVs [\(fieldShape)]"
                     )
+                    update.portControl = control
                 }
+
+                if command == 0x020C || command == 0x0A0C,
+                   let history = AnkerSession.parsePortHistory(variant.fields) {
+                    lastSessionDecryptFailureAt = nil
+                    diagnostics.append(
+                        "Decoded \(decoded.source) \(variant.dialect) port history 0x\(Self.hex4(command))"
+                    )
+                    update.portHistory = history
+                }
+
+                if update.telemetry != nil || update.settings != nil
+                    || update.portControl != nil || update.portHistory != nil {
+                    update.diagnostics = diagnostics
+                    return update
+                }
+            }
+
+            if let ack = Self.controlAcknowledgement(for: command) {
+                return AnkerSessionUpdate(diagnostics: [ack])
             }
         }
 
-        if command == 0x020A { return AnkerSessionUpdate() }
+        if command == 0x020A || command == 0x020C { return AnkerSessionUpdate() }
         let now = Date()
         if lastSessionDecryptFailureAt.map({ now.timeIntervalSince($0) >= 10 }) ?? true {
             lastSessionDecryptFailureAt = now
@@ -885,6 +923,91 @@ private final class ModernAnkerSession {
                 now: now
             )
         )
+    }
+
+    func makeChargingMode(_ mode: ChargerChargingMode, now: Date = Date()) throws -> [Data] {
+        guard isReady else { throw AnkerProtocolError.sessionNotReady }
+        var packets = [
+            try makePacket(
+                group: 0x0F,
+                command: 0x0206,
+                fields: AnkerSession.singleValueFields(mode.protocolValue, now: now)
+            )
+        ]
+        if let allocation = mode.fixedAllocationValue {
+            packets.append(try makePacket(
+                group: 0x0F,
+                command: 0x0205,
+                fields: AnkerSession.singleValueFields(allocation, now: now)
+            ))
+        }
+        return packets
+    }
+
+    func makeCustomChargeMode(_ split: CustomChargeSplit, now: Date = Date()) throws -> Data {
+        guard isReady else { throw AnkerProtocolError.sessionNotReady }
+        return try makePacket(
+            group: 0x0F,
+            command: 0x0206,
+            fields: try AnkerSession.customChargeFields(split, now: now)
+        )
+    }
+
+    func makeLanguage(_ language: ChargerLanguage, now: Date = Date()) throws -> Data {
+        try makeSetting(command: 0x0202, value: language.rawValue, now: now)
+    }
+
+    func makeScreenTimeout(_ timeout: ChargerScreenTimeout, now: Date = Date()) throws -> Data {
+        try makeSetting(command: 0x0203, value: timeout.rawValue, now: now)
+    }
+
+    func makeScreenBrightness(_ percent: UInt8, now: Date = Date()) throws -> Data {
+        try makeSetting(command: 0x0204, value: min(100, max(25, percent)), now: now)
+    }
+
+    func makeScreenOrientation(_ orientation: ChargerOrientation, now: Date = Date()) throws -> Data {
+        try makeSetting(command: 0x020B, value: orientation.rawValue, now: now)
+    }
+
+    func makeAutoRotate(_ enabled: Bool, now: Date = Date()) throws -> Data {
+        try makeSetting(command: 0x020D, value: enabled ? 1 : 0, now: now)
+    }
+
+    func makePortHistoryProbe(now: Date = Date()) throws -> Data {
+        guard isReady else { throw AnkerProtocolError.sessionNotReady }
+        return try makePacket(
+            group: 0x0F,
+            command: 0x020C,
+            fields: [
+                (0xA1, Data([0x21])),
+                (0xA2, Data([0x01, 0x00])),
+                (0xFE, Self.epochTimestamp(now))
+            ]
+        )
+    }
+
+    private func makeSetting(command: UInt16, value: UInt8, now: Date) throws -> Data {
+        guard isReady else { throw AnkerProtocolError.sessionNotReady }
+        return try makePacket(
+            group: 0x0F,
+            command: command,
+            fields: AnkerSession.singleValueFields(value, now: now)
+        )
+    }
+
+    private static func controlAcknowledgement(for command: UInt16) -> String? {
+        switch command {
+        case 0x0202: return "Language setting acknowledged"
+        case 0x0203: return "Screen timeout acknowledged"
+        case 0x0204: return "Screen brightness acknowledged"
+        case 0x0205: return "Fixed allocation acknowledged"
+        case 0x0206: return "Charging mode acknowledged"
+        case 0x0207: return "Port output switch acknowledged"
+        case 0x0209: return "Port shutdown timer acknowledged"
+        case 0x020B: return "Screen orientation acknowledged"
+        case 0x020D: return "Auto-rotate setting acknowledged"
+        default: return nil
+        }
     }
 
     private func receiveHandshake(
@@ -1117,12 +1240,221 @@ final class AnkerSession {
         return try modern.makePortShutdownTimer(portIndex: portIndex, seconds: seconds, now: now)
     }
 
+    func makeChargingMode(_ mode: ChargerChargingMode, now: Date = Date()) throws -> [Data] {
+        guard transport == .modernAESGCM else { throw AnkerProtocolError.sessionNotReady }
+        return try modern.makeChargingMode(mode, now: now)
+    }
+
+    func makeCustomChargeMode(_ split: CustomChargeSplit, now: Date = Date()) throws -> Data {
+        guard transport == .modernAESGCM else { throw AnkerProtocolError.sessionNotReady }
+        return try modern.makeCustomChargeMode(split, now: now)
+    }
+
+    func makeLanguage(_ language: ChargerLanguage, now: Date = Date()) throws -> Data {
+        guard transport == .modernAESGCM else { throw AnkerProtocolError.sessionNotReady }
+        return try modern.makeLanguage(language, now: now)
+    }
+
+    func makeScreenTimeout(_ timeout: ChargerScreenTimeout, now: Date = Date()) throws -> Data {
+        guard transport == .modernAESGCM else { throw AnkerProtocolError.sessionNotReady }
+        return try modern.makeScreenTimeout(timeout, now: now)
+    }
+
+    func makeScreenBrightness(_ percent: UInt8, now: Date = Date()) throws -> Data {
+        guard transport == .modernAESGCM else { throw AnkerProtocolError.sessionNotReady }
+        return try modern.makeScreenBrightness(percent, now: now)
+    }
+
+    func makeScreenOrientation(_ orientation: ChargerOrientation, now: Date = Date()) throws -> Data {
+        guard transport == .modernAESGCM else { throw AnkerProtocolError.sessionNotReady }
+        return try modern.makeScreenOrientation(orientation, now: now)
+    }
+
+    func makeAutoRotate(_ enabled: Bool, now: Date = Date()) throws -> Data {
+        guard transport == .modernAESGCM else { throw AnkerProtocolError.sessionNotReady }
+        return try modern.makeAutoRotate(enabled, now: now)
+    }
+
+    func makePortHistoryProbe(now: Date = Date()) throws -> Data {
+        guard transport == .modernAESGCM else { throw AnkerProtocolError.sessionNotReady }
+        return try modern.makePortHistoryProbe(now: now)
+    }
+
     func makeTelemetrySubscription(now: Date = Date()) throws -> Data {
         try legacy.makeTelemetrySubscription(now: now)
     }
 
     var supportsPortControl: Bool {
         transport == .modernAESGCM && isReady
+    }
+
+    static func singleValueFields(_ value: UInt8, now: Date = Date()) -> [(UInt8, Data)] {
+        [
+            (0xA1, Data([0x21])),
+            (0xA2, Data([0x01, value])),
+            (0xFE, epochBytes(now))
+        ]
+    }
+
+    static func customChargeFields(_ split: CustomChargeSplit, now: Date = Date()) throws -> [(UInt8, Data)] {
+        if let error = split.validationError {
+            throw AnkerProtocolError.invalidTLV(error)
+        }
+        let powerArray = Data([
+            split.profileNumber,
+            split.autoExit ? 1 : 0,
+            split.c1,
+            split.c2,
+            split.c3
+        ])
+        let protocolArray = Data([
+            split.protocolMasks[safe: 0] ?? 0x3B, 0, 0,
+            split.protocolMasks[safe: 1] ?? 0x3B, 0, 0,
+            split.protocolMasks[safe: 2] ?? 0x3B, 0, 0
+        ])
+        return [
+            (0xA1, Data([0x21])),
+            (0xA2, Data([0x01, 0x04])),
+            (0xA3, Data([0x04]) + powerArray),
+            (0xA4, Data([0x04]) + protocolArray),
+            (0xFE, epochBytes(now))
+        ]
+    }
+
+    static func parseSettings(_ fields: [UInt8: Data], command: UInt16) -> ChargerSettingsUpdate {
+        var update = ChargerSettingsUpdate()
+        let a2 = typedControlUnsigned(fields[0xA2])
+
+        switch command {
+        case 0x0202, 0x030B:
+            if let value = a2, let language = ChargerLanguage(rawValue: UInt8(truncatingIfNeeded: value)) {
+                update.language = language
+            }
+        case 0x0203, 0x0304:
+            if let value = a2, let timeout = ChargerScreenTimeout(rawValue: UInt8(truncatingIfNeeded: value)) {
+                update.screenTimeout = timeout
+            }
+        case 0x0204:
+            if let value = a2, (25...100).contains(Int(value)) {
+                update.brightnessPercent = Int(value)
+            }
+        case 0x020B:
+            if let value = a2, let orientation = ChargerOrientation(rawValue: UInt8(truncatingIfNeeded: value)) {
+                update.orientation = orientation
+            }
+        case 0x020D:
+            if let value = a2, value <= 1 {
+                update.autoRotate = value == 1
+            }
+        case 0x0205:
+            if let value = a2 {
+                update.chargingMode = value == 0 ? .dualLaptop : .c1Priority
+            }
+        case 0x0206, 0x0303:
+            if let value = a2 {
+                switch value {
+                case 0: update.chargingMode = .ai2
+                case 1: update.chargingMode = typedControlUnsigned(fields[0xAF]) == 0 ? .dualLaptop : .c1Priority
+                case 4: update.chargingMode = .custom
+                default: break
+                }
+            }
+            update.customSplit = parseCustomSplit(fields)
+        case 0x0200, 0x0300, 0x020A:
+            if let brightness = typedControlUnsigned(fields[0xA9]), (25...100).contains(Int(brightness)) {
+                update.brightnessPercent = Int(brightness)
+            }
+            if let code = typedUInt8(fields[0xA8]) ?? typedUInt8(fields[0xAB]),
+               (1...63).contains(code) {
+                update.fault = ChargerFault.from(errorCode: code)
+            }
+            if let mode = parseTelemetry(fields)?.chargingMode {
+                update.chargingMode = mode
+            }
+        case 0x0301:
+            if let code = a2 ?? typedControlUnsigned(fields[0xA1]), code <= 63 {
+                update.fault = ChargerFault.from(errorCode: code)
+            }
+        case 0x0302:
+            if let value = a2, (25...100).contains(Int(value)) {
+                update.brightnessPercent = Int(value)
+            }
+        default:
+            break
+        }
+
+        return update
+    }
+
+    static func parseCustomSplit(_ fields: [UInt8: Data]) -> CustomChargeSplit? {
+        guard let power = typedByteArray(fields[0xA3]), power.count >= 5 else { return nil }
+        var split = CustomChargeSplit(
+            profileNumber: power[0],
+            autoExit: power[1] == 1,
+            portWatts: [power[2], power[3], power[4]]
+        )
+        if let protocols = typedByteArray(fields[0xA4]), protocols.count >= 9 {
+            split.protocolMasks = [protocols[0], protocols[3], protocols[6]]
+        }
+        return split
+    }
+
+    static func parsePortHistory(
+        _ fields: [UInt8: Data],
+        at date: Date = Date()
+    ) -> ChargerPortHistory? {
+        var arrays: [(UInt8, [UInt16])] = []
+        for (tag, value) in fields.sorted(by: { $0.key < $1.key }) {
+            let bytes: Data
+            if let typed = typedByteArray(value) {
+                bytes = typed
+            } else if value.count >= 8 {
+                bytes = value
+            } else {
+                continue
+            }
+            guard bytes.count.isMultiple(of: 2), bytes.count >= 8 else { continue }
+            var samples: [UInt16] = []
+            var index = 0
+            while index + 1 < bytes.count {
+                samples.append(UInt16(bytes[index]) | (UInt16(bytes[index + 1]) << 8))
+                index += 2
+            }
+            let valid = samples.filter { $0 != 0xFFFF }
+            guard valid.count >= 4 else { continue }
+            arrays.append((tag, samples))
+        }
+        guard arrays.count >= 2 else { return nil }
+
+        func median(_ samples: [UInt16]) -> Double {
+            let valid = samples.filter { $0 != 0xFFFF }.sorted()
+            guard !valid.isEmpty else { return 0 }
+            return Double(valid[valid.count / 2])
+        }
+
+        let voltages = arrays.filter { (4_000...28_000).contains(median($0.1)) }
+        let currents = arrays.filter { sample in
+            let value = median(sample.1)
+            return value <= 5_500 && !(4_000...28_000).contains(value)
+        }
+        let count = min(3, voltages.count, currents.count)
+        guard count >= 1 else { return nil }
+
+        func volts(_ samples: [UInt16]) -> [Double] {
+            samples.map { $0 == 0xFFFF ? 0 : Double($0) / 1_000 }
+        }
+        func amps(_ samples: [UInt16]) -> [Double] {
+            samples.map { $0 == 0xFFFF ? 0 : Double($0) / 1_000 }
+        }
+
+        let ports = (0..<count).map { offset in
+            PortHistorySeries(
+                index: offset + 1,
+                voltages: volts(voltages[offset].1),
+                currents: amps(currents[offset].1)
+            )
+        }
+        return ChargerPortHistory(capturedAt: date, ports: ports)
     }
 
     static func portOutputFields(
@@ -1175,6 +1507,16 @@ final class AnkerSession {
             update.remainingSeconds = remaining
         }
         return update.isOutputEnabled != nil || update.remainingSeconds != nil ? update : nil
+    }
+
+    private static func typedByteArray(_ data: Data?) -> Data? {
+        guard let data, data.first == 0x04, data.count > 1 else { return nil }
+        return Data(data.dropFirst())
+    }
+
+    private static func typedUInt8(_ data: Data?) -> UInt32? {
+        guard let data, data.first == 0x01, data.count >= 2 else { return nil }
+        return UInt32(data[1])
     }
 
     private static func validatePortIndex(_ portIndex: UInt8) throws {

@@ -1,11 +1,19 @@
 import Foundation
 
 @MainActor
+enum AppRuntime {
+    static weak var model: AppModel?
+}
+
+@MainActor
 final class AppModel: ObservableObject {
     @Published private(set) var connectionState: ChargerConnectionState = .idle
     @Published private(set) var identity = ChargerIdentity()
     @Published private(set) var telemetry = ChargerTelemetry.empty
+    @Published private(set) var settings = ChargerSettings.empty
+    @Published private(set) var chargerHistory: ChargerPortHistory?
     @Published private(set) var portCommandsInFlight: Set<Int> = []
+    @Published var preferences: AppPreferences
 
     let history: HistoryStore
     let diagnostics: DiagnosticLog
@@ -13,15 +21,24 @@ final class AppModel: ObservableObject {
     private let bluetooth: ChargerBluetooth?
     private let previewCanControl: Bool
     private var lastLocalControlAt: [Int: Date] = [:]
+    private var lastLocalSettingsAt: Date?
+    private var lastChargingAt: [Int: Date] = [:]
+    private var idleNotifiedPorts: Set<Int> = []
 
     init() {
         let diagnostics = DiagnosticLog()
         let bluetooth = ChargerBluetooth(diagnostics: diagnostics)
+        let preferences = AppPreferences.shared
         self.history = HistoryStore()
         self.diagnostics = diagnostics
         self.bluetooth = bluetooth
         self.previewCanControl = false
+        self.preferences = preferences
+        if let stored = preferences.loadPersistedIdentity() {
+            self.identity = stored
+        }
         bluetooth.delegate = self
+        AppRuntime.model = self
         bluetooth.start()
     }
 
@@ -32,7 +49,10 @@ final class AppModel: ObservableObject {
         telemetry: ChargerTelemetry,
         historySamples: [PowerHistorySample] = [],
         diagnosticEntries: [DiagnosticEntry] = [],
-        canControlPorts: Bool = true
+        canControlPorts: Bool = true,
+        settings: ChargerSettings = .empty,
+        chargerHistory: ChargerPortHistory? = nil,
+        preferences: AppPreferences? = nil
     ) {
         self.history = HistoryStore(persist: false, samples: historySamples)
         let diagnostics = DiagnosticLog()
@@ -43,6 +63,9 @@ final class AppModel: ObservableObject {
         self.connectionState = previewState
         self.identity = identity
         self.telemetry = telemetry
+        self.settings = settings
+        self.chargerHistory = chargerHistory
+        self.preferences = preferences ?? AppPreferences.shared
     }
 
     var totalPower: Double { telemetry.totalPower }
@@ -53,6 +76,22 @@ final class AppModel: ObservableObject {
 
     var canControlPorts: Bool {
         connectionState.isConnected && (bluetooth?.canControlPorts ?? previewCanControl)
+    }
+
+    var statusCaption: String {
+        if connectionState.isConnected {
+            if let firmware = identity.firmwareLabel {
+                return "\(identity.displayName) · \(firmware)"
+            }
+            return "Connected: \(identity.displayName)"
+        }
+        if !identity.isEmpty {
+            if let firmware = identity.firmwareLabel {
+                return "Last seen \(identity.displayName) · \(firmware)"
+            }
+            return "Last seen \(identity.displayName)"
+        }
+        return connectionState.label
     }
 
     func reconnect() {
@@ -97,6 +136,116 @@ final class AppModel: ObservableObject {
             )
         }
         scheduleClearInFlight(index)
+    }
+
+    func setChargingMode(_ mode: ChargerChargingMode) {
+        guard canControlPorts else { return }
+        lastLocalSettingsAt = Date()
+        telemetry.chargingMode = mode
+        do {
+            try bluetooth?.setChargingMode(mode)
+        } catch {
+            diagnostics.record(
+                "Could not set charging mode: \(error.localizedDescription)",
+                level: .error,
+                category: "Control"
+            )
+        }
+    }
+
+    func setCustomChargeSplit(_ split: CustomChargeSplit) {
+        guard canControlPorts else { return }
+        if let error = split.validationError {
+            diagnostics.record(error, level: .error, category: "Control")
+            return
+        }
+        lastLocalSettingsAt = Date()
+        telemetry.chargingMode = .custom
+        settings.customSplit = split
+        do {
+            try bluetooth?.setCustomChargeMode(split)
+        } catch {
+            diagnostics.record(
+                "Could not set custom split: \(error.localizedDescription)",
+                level: .error,
+                category: "Control"
+            )
+        }
+    }
+
+    func setLanguage(_ language: ChargerLanguage) {
+        guard canControlPorts else { return }
+        lastLocalSettingsAt = Date()
+        settings.language = language
+        do {
+            try bluetooth?.setLanguage(language)
+        } catch {
+            diagnostics.record(
+                "Could not set language: \(error.localizedDescription)",
+                level: .error,
+                category: "Control"
+            )
+        }
+    }
+
+    func setScreenTimeout(_ timeout: ChargerScreenTimeout) {
+        guard canControlPorts else { return }
+        lastLocalSettingsAt = Date()
+        settings.screenTimeout = timeout
+        do {
+            try bluetooth?.setScreenTimeout(timeout)
+        } catch {
+            diagnostics.record(
+                "Could not set screen timeout: \(error.localizedDescription)",
+                level: .error,
+                category: "Control"
+            )
+        }
+    }
+
+    func setScreenBrightness(_ percent: Int) {
+        guard canControlPorts else { return }
+        lastLocalSettingsAt = Date()
+        settings.brightnessPercent = min(100, max(25, percent))
+        do {
+            try bluetooth?.setScreenBrightness(percent)
+        } catch {
+            diagnostics.record(
+                "Could not set brightness: \(error.localizedDescription)",
+                level: .error,
+                category: "Control"
+            )
+        }
+    }
+
+    func setScreenOrientation(_ orientation: ChargerOrientation) {
+        guard canControlPorts else { return }
+        lastLocalSettingsAt = Date()
+        settings.orientation = orientation
+        do {
+            try bluetooth?.setScreenOrientation(orientation)
+        } catch {
+            diagnostics.record(
+                "Could not set orientation: \(error.localizedDescription)",
+                level: .error,
+                category: "Control"
+            )
+        }
+    }
+
+    func setAutoRotate(_ enabled: Bool) {
+        guard canControlPorts else { return }
+        lastLocalSettingsAt = Date()
+        settings.autoRotate = enabled
+        do {
+            try bluetooth?.setAutoRotate(enabled)
+        } catch {
+            diagnostics.record(
+                "Could not set auto-rotate: \(error.localizedDescription)",
+                level: .error,
+                category: "Control"
+            )
+        }
     }
 
     func noteTimerExpired(portIndex: Int) {
@@ -189,6 +338,51 @@ final class AppModel: ObservableObject {
                 next.ports[index].shutdownDurationSeconds = 0
             }
         }
+
+        let preserveMode = lastLocalSettingsAt.map { now.timeIntervalSince($0) < 2.5 } ?? false
+        if preserveMode {
+            next.chargingMode = previous.chargingMode
+        }
+    }
+
+    private func applySettings(_ update: ChargerSettingsUpdate) {
+        let preserveLocal = lastLocalSettingsAt.map { Date().timeIntervalSince($0) < 2.5 } ?? false
+        if !preserveLocal, let mode = update.chargingMode {
+            telemetry.chargingMode = mode
+        }
+        if preserveLocal {
+            var filtered = update
+            filtered.chargingMode = nil
+            filtered.brightnessPercent = settings.brightnessPercent != nil ? nil : update.brightnessPercent
+            filtered.screenTimeout = settings.screenTimeout != nil ? nil : update.screenTimeout
+            filtered.orientation = settings.orientation != nil ? nil : update.orientation
+            filtered.autoRotate = settings.autoRotate != nil ? nil : update.autoRotate
+            filtered.language = settings.language != nil ? nil : update.language
+            filtered.customSplit = settings.customSplit != nil ? nil : update.customSplit
+            settings = filtered.merging(into: settings)
+        } else {
+            settings = update.merging(into: settings)
+        }
+    }
+
+    private func noteIdlePorts(in telemetry: ChargerTelemetry) {
+        guard preferences.idleNotificationsEnabled, connectionState.isConnected else { return }
+        let now = Date()
+        for port in telemetry.ports {
+            if port.power > 1 {
+                lastChargingAt[port.index] = now
+                idleNotifiedPorts.remove(port.index)
+                continue
+            }
+            guard port.power <= 0.05, let lastCharging = lastChargingAt[port.index] else { continue }
+            guard now.timeIntervalSince(lastCharging) >= IdleChargeNotifier.idleInterval else { continue }
+            guard !idleNotifiedPorts.contains(port.index) else { continue }
+            idleNotifiedPorts.insert(port.index)
+            IdleChargeNotifier.notify(
+                portIndex: port.index,
+                label: preferences.displayName(forPort: port.index)
+            )
+        }
     }
 
     private func scheduleClearInFlight(_ index: Int) {
@@ -196,7 +390,6 @@ final class AppModel: ObservableObject {
             self?.portCommandsInFlight.remove(index)
         }
     }
-
 }
 
 extension AppModel: ChargerBluetoothDelegate {
@@ -206,11 +399,14 @@ extension AppModel: ChargerBluetoothDelegate {
             telemetry = .empty
             portCommandsInFlight = []
             lastLocalControlAt = [:]
+            lastChargingAt = [:]
+            idleNotifiedPorts = []
         }
     }
 
     func chargerBluetooth(_ bluetooth: ChargerBluetooth, received identity: ChargerIdentity) {
-        self.identity = identity
+        self.identity = self.identity.merging(identity)
+        preferences.persistIdentity(self.identity)
     }
 
     func chargerBluetooth(_ bluetooth: ChargerBluetooth, received telemetry: ChargerTelemetry) {
@@ -218,9 +414,18 @@ extension AppModel: ChargerBluetoothDelegate {
         mergeControlState(from: self.telemetry, into: &merged)
         self.telemetry = merged
         history.append(merged)
+        noteIdlePorts(in: merged)
     }
 
     func chargerBluetooth(_ bluetooth: ChargerBluetooth, received control: PortControlUpdate) {
         applyDeviceControl(control)
+    }
+
+    func chargerBluetooth(_ bluetooth: ChargerBluetooth, received settings: ChargerSettingsUpdate) {
+        applySettings(settings)
+    }
+
+    func chargerBluetooth(_ bluetooth: ChargerBluetooth, received history: ChargerPortHistory) {
+        chargerHistory = history
     }
 }

@@ -7,8 +7,15 @@ struct MenuContentView: View {
 
     @State private var confirmOffPort: Int?
     @State private var customTimerPort: Int?
+    @State private var showSettings = false
     @State private var customHours = 1
     @State private var customMinutes = 0
+    @ObservedObject private var preferences: AppPreferences
+
+    init(model: AppModel) {
+        self.model = model
+        _preferences = ObservedObject(wrappedValue: model.preferences)
+    }
 
     private static let hourPresets: [(label: String, seconds: UInt32)] = [
         ("1 Hour", 3_600),
@@ -44,6 +51,9 @@ struct MenuContentView: View {
         ), arrowEdge: .leading) {
             customTimerPopover
         }
+        .popover(isPresented: $showSettings, arrowEdge: .leading) {
+            SettingsView(model: model)
+        }
     }
 
     private var header: some View {
@@ -60,11 +70,48 @@ struct MenuContentView: View {
                     .foregroundStyle(.secondary)
             }
 
-            if model.connectionState.isConnected, let mode = model.telemetry.chargingMode {
-                Label(mode.label, systemImage: "slider.horizontal.3")
+            if model.connectionState.isConnected, let banner = model.settings.fault.banner {
+                Label(banner, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if model.connectionState.isConnected {
+                chargingModeControl
+            } else if let firmware = model.identity.firmwareLabel {
+                Text(firmware)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var chargingModeControl: some View {
+        if model.canControlPorts {
+            Menu {
+                ForEach(ChargerChargingMode.allCases, id: \.self) { mode in
+                    Button {
+                        model.setChargingMode(mode)
+                    } label: {
+                        if model.telemetry.chargingMode == mode {
+                            Label(mode.label, systemImage: "checkmark")
+                        } else {
+                            Text(mode.label)
+                        }
+                    }
+                }
+            } label: {
+                Label(model.telemetry.chargingMode?.label ?? "Charging mode", systemImage: "slider.horizontal.3")
+                    .font(.caption)
+            }
+            .menuIndicator(.hidden)
+            .help("Charging mode")
+        } else if let mode = model.telemetry.chargingMode {
+            Label(mode.label, systemImage: "slider.horizontal.3")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -75,7 +122,7 @@ struct MenuContentView: View {
 
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
-                Text("C\(port.index)")
+                Text(preferences.displayName(forPort: port.index))
                     .font(.headline)
                 Spacer(minLength: 4)
                 if isLive {
@@ -248,7 +295,7 @@ struct MenuContentView: View {
                 Circle()
                     .fill(model.connectionState.isConnected ? Color.green : Color.secondary)
                     .frame(width: 7, height: 7)
-                Text(model.connectionState.isConnected ? "Connected: \(model.identity.displayName)" : model.connectionState.label)
+                Text(model.statusCaption)
                     .font(.caption)
                     .lineLimit(1)
             }
@@ -258,6 +305,11 @@ struct MenuContentView: View {
                     Label("Reconnect", systemImage: "arrow.clockwise")
                 }
                 .help("Reconnect")
+                Spacer(minLength: 0)
+                Button { showSettings = true } label: {
+                    Label("Settings", systemImage: "gearshape")
+                }
+                .help("Settings")
                 Spacer(minLength: 0)
                 Button { AuxiliaryWindow.open(.diagnostics, using: openWindow) } label: {
                     Label("Diagnostics", systemImage: "waveform.path.ecg")

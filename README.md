@@ -9,7 +9,7 @@
 
 Unofficial native **macOS menu-bar** monitor for the **Anker Prime Charger 160W with Smart Display (A2687)**.
 
-The app lives in the menu bar (`LSUIElement`). It connects locally over Bluetooth LE, shows live power, and can turn individual USB-C ports on or off or set a shutdown timer. It is not affiliated with Anker Innovations.
+The app lives in the menu bar (`LSUIElement`). It connects locally over Bluetooth LE, shows live power, and can change charging mode, display settings, and individual USB-C ports. It is not affiliated with Anker Innovations.
 
 ![Menu bar popover](docs/screenshots/menu.png)
 
@@ -23,21 +23,23 @@ The app lives in the menu bar (`LSUIElement`). It connects locally over Bluetoot
 - macOS 14+ menu-bar app for **A2687 only**
 - Local BLE only — no Anker account, no cloud, no network requests
 - Menu-bar title with **total watts** while connected (bolt icon when idle)
-- Per-port watts, volts, and amps, plus charging mode when the charger reports it
-- Optional cable / charging / device strings when the charger sends them
-- Port output on/off and per-port shutdown timers (modern AES-GCM session)
-- Rolling 24-hour history chart and a local watt-hour estimate
-- Diagnostics window with copyable BLE and protocol events (no session keys or decrypted payloads)
+- Per-port watts, volts, and amps, plus firmware under the product name
+- Charging-mode picker (AI 2.0, C1 Priority, Dual Laptop, Custom) and display settings (brightness, timeout, rotation, language)
+- Optional cable / charging / device strings, including a small USB VID/PID table (unknown models stay at brand level)
+- Port output on/off, per-port shutdown timers, and optional port nicknames (modern AES-GCM session)
+- Rolling 24-hour Mac history, optional charger-side curve, CSV export, and a local watt-hour estimate
+- Launch at login, optional idle-port notification, and Shortcuts for port on/off
+- Diagnostics window with firmware / serial / MAC in the header (Copy All still omits serials, session keys, and decrypted payloads)
 - Current Anker-app-compatible P-256 ECDH / AES-GCM handshake, with AES-CBC fallback from [Anker-BLE](https://github.com/T-REX-XP/Anker-BLE)
 
 ## What's not included
 
-- Changing charging modes (AI 2.0, C1 Priority, Dual Laptop, and so on)
 - Firmware updates or OTA
+- Cloud protocol management (`0x021D`) or Anker account features
 - iOS, iPadOS, Windows, Linux
 - Home Assistant, MQTT, or any other home-automation bridge
 - MagGo pads, power banks, Solix stations, or other Anker models
-- Names of the devices plugged into the ports — the charger does not report them
+- The official app's full device-model catalog — unknown USB IDs stay `"Brand Device"`
 - Sharing the BLE session with the official Anker app (only one client at a time)
 - App Store distribution or Apple notarization (see [Install](#install))
 
@@ -62,12 +64,14 @@ Grant Bluetooth access when macOS asks.
 The app appears only in the menu bar. Click the bolt icon:
 
 - **Connected** — total watts in the menu-bar title; the popover lists C1–C3
+- **Charging mode** — AI 2.0, C1 Priority, Dual Laptop, or Custom
+- **Settings** — display, custom watt split, port names, launch at login, idle notify
 - **Reconnect** — drop the current session and scan again
 - **Diagnostics** — handshake and protocol log
-- **History** — last 1 / 6 / 24 hours, stored on this Mac
+- **History** — last 1 / 6 / 24 hours on this Mac, charger curve, CSV export
 - **Quit**
 
-Right-click the bolt icon for Reconnect, Charging History, Diagnostics, and Quit.
+Right-click the bolt icon for Reconnect, Charging History, Diagnostics, and Quit. Shortcuts can turn a port on or off while the app is running.
 
 If a connection fails, open Diagnostics and use **Copy All** when filing an issue.
 
@@ -93,13 +97,13 @@ Cut a local archive (and optionally a GitHub Release) with:
 
 ## Privacy
 
-All charger telemetry and history stay on the Mac. Up to 24 hours of samples are stored in the app's Application Support container (`~/Library/Application Support/AnkerPower/`). The app makes no network requests.
+All charger telemetry and history stay on the Mac. Up to 24 hours of samples and last-known charger identity are stored in the app's Application Support container (`~/Library/Application Support/AnkerPower/`). Port nicknames live in UserDefaults. The app makes no network requests.
 
 ## Protocol
 
 This is an unofficial implementation. The A2687 BLE protocol is not a public Anker API and may change with charger firmware.
 
-The app first performs the current app-compatible, ephemeral P-256 ECDH/AES-GCM session and polls `0x020A`/`0x0200`. If that handshake does not answer, it falls back to the older AES-CBC flow and `0x4200` telemetry subscription documented by the MIT-licensed [T-REX-XP/Anker-BLE](https://github.com/T-REX-XP/Anker-BLE) project. Port control is available on the modern session only.
+The app first performs the current app-compatible, ephemeral P-256 ECDH/AES-GCM session and polls `0x020A`/`0x0200`. After the session is ready it also requests charger-side history once (`0x020C`). If that handshake does not answer, it falls back to the older AES-CBC flow and `0x4200` telemetry subscription documented by the MIT-licensed [T-REX-XP/Anker-BLE](https://github.com/T-REX-XP/Anker-BLE) project. Mode, display, port control, and history are available on the modern session only. Charger-button changes arrive as `0x0300`–`0x030B` reports.
 
 ## Credits
 

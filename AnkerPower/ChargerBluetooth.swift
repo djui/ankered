@@ -7,6 +7,8 @@ protocol ChargerBluetoothDelegate: AnyObject {
     func chargerBluetooth(_ bluetooth: ChargerBluetooth, received identity: ChargerIdentity)
     func chargerBluetooth(_ bluetooth: ChargerBluetooth, received telemetry: ChargerTelemetry)
     func chargerBluetooth(_ bluetooth: ChargerBluetooth, received control: PortControlUpdate)
+    func chargerBluetooth(_ bluetooth: ChargerBluetooth, received settings: ChargerSettingsUpdate)
+    func chargerBluetooth(_ bluetooth: ChargerBluetooth, received history: ChargerPortHistory)
 }
 
 @MainActor
@@ -35,6 +37,7 @@ final class ChargerBluetooth: NSObject {
     private var heartbeatTimer: Timer?
     private var heartbeatTick = 0
     private var lastTelemetryAt: Date?
+    private var didRequestPortHistory = false
 
     init(diagnostics: DiagnosticLog) {
         self.diagnostics = diagnostics
@@ -99,6 +102,46 @@ final class ChargerBluetooth: NSObject {
         )
         queueWrite(try session.makePortShutdownTimer(portIndex: portIndex, seconds: seconds))
         refreshTelemetrySoon()
+    }
+
+    func setChargingMode(_ mode: ChargerChargingMode) throws {
+        diagnostics.record("Setting charging mode \(mode.label)", category: "Control")
+        queueWrites(try session.makeChargingMode(mode), spacing: 0.12)
+        refreshTelemetrySoon()
+    }
+
+    func setCustomChargeMode(_ split: CustomChargeSplit) throws {
+        diagnostics.record(
+            "Setting custom charge split C1=\(split.c1)W C2=\(split.c2)W C3=\(split.c3)W",
+            category: "Control"
+        )
+        queueWrite(try session.makeCustomChargeMode(split))
+        refreshTelemetrySoon()
+    }
+
+    func setLanguage(_ language: ChargerLanguage) throws {
+        diagnostics.record("Setting charger language \(language.label)", category: "Control")
+        queueWrite(try session.makeLanguage(language))
+    }
+
+    func setScreenTimeout(_ timeout: ChargerScreenTimeout) throws {
+        diagnostics.record("Setting screen timeout \(timeout.label)", category: "Control")
+        queueWrite(try session.makeScreenTimeout(timeout))
+    }
+
+    func setScreenBrightness(_ percent: Int) throws {
+        diagnostics.record("Setting screen brightness \(percent)%", category: "Control")
+        queueWrite(try session.makeScreenBrightness(UInt8(min(100, max(25, percent)))))
+    }
+
+    func setScreenOrientation(_ orientation: ChargerOrientation) throws {
+        diagnostics.record("Setting screen orientation \(orientation.label)", category: "Control")
+        queueWrite(try session.makeScreenOrientation(orientation))
+    }
+
+    func setAutoRotate(_ enabled: Bool) throws {
+        diagnostics.record("Setting auto-rotate \(enabled ? "on" : "off")", category: "Control")
+        queueWrite(try session.makeAutoRotate(enabled))
     }
 
     private static func wirePortIndex(_ index: Int) throws -> UInt8 {
@@ -202,6 +245,7 @@ final class ChargerBluetooth: NSObject {
         notifyCharacteristic = nil
         frameDecoder = AnkerFrameStreamDecoder()
         session.reset()
+        didRequestPortHistory = false
         if let peripheral {
             central.cancelPeripheralConnection(peripheral)
         }
@@ -314,6 +358,22 @@ final class ChargerBluetooth: NSObject {
             )
             publish(.connected)
             startHeartbeat()
+            if session.transport == .modernAESGCM, !didRequestPortHistory {
+                didRequestPortHistory = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                    guard let self, self.session.supportsPortControl else { return }
+                    do {
+                        self.queueWrite(try self.session.makePortHistoryProbe())
+                        self.diagnostics.record("Requested charger-side port history", category: "Protocol")
+                    } catch {
+                        self.diagnostics.record(
+                            "Could not request port history: \(error.localizedDescription)",
+                            level: .warning,
+                            category: "Protocol"
+                        )
+                    }
+                }
+            }
         } catch {
             failAndDisconnect("Could not subscribe: \(error.localizedDescription)")
         }
@@ -561,7 +621,7 @@ extension ChargerBluetooth: @preconcurrency CBPeripheralDelegate {
                 queueWrites(update.outboundPackets, spacing: update.becameReady ? 0.12 : 0)
                 if let identity = update.identity {
                     diagnostics.record(
-                        "Identity firmware=\(identity.firmware ?? "unknown") serial=\(identity.serialNumber ?? "unknown")",
+                        "Identity firmware=\(identity.firmwareLabel ?? "unknown") serial=\(identity.serialNumber == nil ? "none" : "present")",
                         level: .success,
                         category: "Protocol"
                     )
@@ -573,12 +633,24 @@ extension ChargerBluetooth: @preconcurrency CBPeripheralDelegate {
                     diagnostics.record("Decoded telemetry: \(powers)", level: .success, category: "Telemetry")
                     delegate?.chargerBluetooth(self, received: telemetry)
                 }
+                if let settings = update.settings, !settings.isEmpty {
+                    diagnostics.record("Decoded charger settings", category: "Control")
+                    delegate?.chargerBluetooth(self, received: settings)
+                }
                 if let control = update.portControl {
                     diagnostics.record(
                         "Port control C\(control.portIndex) enabled=\(control.isOutputEnabled.map { $0 ? "on" : "off" } ?? "unknown") remaining=\(control.remainingSeconds.map(String.init) ?? "unknown")s",
                         category: "Control"
                     )
                     delegate?.chargerBluetooth(self, received: control)
+                }
+                if let history = update.portHistory {
+                    diagnostics.record(
+                        "Decoded charger port history (\(history.sampleCount) samples)",
+                        level: .success,
+                        category: "Telemetry"
+                    )
+                    delegate?.chargerBluetooth(self, received: history)
                 }
                 if update.becameReady {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in

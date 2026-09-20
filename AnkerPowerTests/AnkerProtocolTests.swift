@@ -365,6 +365,175 @@ final class AnkerProtocolTests: XCTestCase {
         XCTAssertFalse(session.supportsPortControl)
         XCTAssertThrowsError(try session.makePortOutput(portIndex: 0, isOn: false))
         XCTAssertThrowsError(try session.makePortShutdownTimer(portIndex: 0, seconds: 60))
+        XCTAssertThrowsError(try session.makeChargingMode(.ai2))
+        XCTAssertThrowsError(try session.makeLanguage(.english))
+        XCTAssertThrowsError(try session.makePortHistoryProbe())
+    }
+
+    func testChargingModeAndDisplayTLVLayouts() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let modeFields = try AnkerTLV.parse(try AnkerTLV.build(AnkerSession.singleValueFields(0, now: now)))
+        XCTAssertEqual(modeFields[0xA1], Data([0x21]))
+        XCTAssertEqual(modeFields[0xA2], Data([0x01, 0x00]))
+        XCTAssertEqual(modeFields[0xFE], Data([0x00, 0xF1, 0x53, 0x65]))
+
+        let allocation = try AnkerTLV.parse(try AnkerTLV.build(AnkerSession.singleValueFields(1, now: now)))
+        XCTAssertEqual(allocation[0xA2], Data([0x01, 0x01]))
+
+        let split = CustomChargeSplit(portWatts: [80, 60, 20])
+        let customFields = try AnkerTLV.parse(try AnkerTLV.build(try AnkerSession.customChargeFields(split, now: now)))
+        XCTAssertEqual(customFields[0xA2], Data([0x01, 0x04]))
+        XCTAssertEqual(customFields[0xA3], Data([0x04, 0x00, 0x00, 80, 60, 20]))
+        XCTAssertEqual(customFields[0xA4], Data([0x04, 0x3B, 0x00, 0x00, 0x3B, 0x00, 0x00, 0x3B, 0x00, 0x00]))
+
+        XCTAssertThrowsError(try AnkerSession.customChargeFields(CustomChargeSplit(portWatts: [10, 0, 0])))
+        XCTAssertThrowsError(try AnkerSession.customChargeFields(CustomChargeSplit(portWatts: [140, 20, 20])))
+        XCTAssertEqual(ChargerChargingMode.ai2.protocolValue, 0)
+        XCTAssertEqual(ChargerChargingMode.custom.protocolValue, 4)
+        XCTAssertEqual(ChargerChargingMode.dualLaptop.fixedAllocationValue, 0)
+        XCTAssertEqual(ChargerChargingMode.c1Priority.fixedAllocationValue, 1)
+    }
+
+    func testParseSettingsFaultsAndDisplayReports() {
+        XCTAssertEqual(ChargerFault.from(errorCode: 0), .none)
+        XCTAssertEqual(ChargerFault.from(errorCode: 1), .overTemperature)
+        XCTAssertEqual(ChargerFault.from(errorCode: 2), .portAbnormality)
+        XCTAssertEqual(ChargerFault.from(errorCode: 9), .other(9))
+        XCTAssertEqual(ChargerFault.from(errorCode: 1).banner, "Over-temperature protection is active")
+
+        let overTemp = AnkerSession.parseSettings([0xA2: Data([0x01, 0x01])], command: 0x0301)
+        XCTAssertEqual(overTemp.fault, .overTemperature)
+
+        let brightness = AnkerSession.parseSettings([0xA2: Data([0x01, 80])], command: 0x0204)
+        XCTAssertEqual(brightness.brightnessPercent, 80)
+
+        let timeout = AnkerSession.parseSettings([0xA2: Data([0x01, 0x02])], command: 0x0304)
+        XCTAssertEqual(timeout.screenTimeout, .fiveMinutes)
+
+        let language = AnkerSession.parseSettings([0xA2: Data([0x01, 0x00])], command: 0x030B)
+        XCTAssertEqual(language.language, .english)
+
+        let mode = AnkerSession.parseSettings([0xA2: Data([0x01, 0x04])], command: 0x0206)
+        XCTAssertEqual(mode.chargingMode, .custom)
+
+        let snapshot = AnkerSession.parseSettings(
+            [0xA8: Data([0x01, 0x02]), 0xA9: Data([0x01, 90])],
+            command: 0x0200
+        )
+        XCTAssertEqual(snapshot.fault, .portAbnormality)
+        XCTAssertEqual(snapshot.brightnessPercent, 90)
+
+        let ignoredWideFault = AnkerSession.parseSettings(
+            [0xA8: Data([0x03, 0x02, 0x00, 0x00, 0x00])],
+            command: 0x0200
+        )
+        XCTAssertNil(ignoredWideFault.fault)
+    }
+
+    func testDeviceIdentityBrandVersusUsbVidPid() throws {
+        let brandFields: [UInt8: Data] = [
+            0xA5: Data([0x04, 0x01, 0x84, 0x4E, 0xCA, 0x0D, 0xBC, 0x1B]),
+            0xA6: Data([0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            0xA7: Data([0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            0xAA: Data([0x01, 0x00]),
+            0xAC: Data([0x04] + Array(repeating: 0x00, count: 10) + [0x03, 0x00]),
+            0xB4: Data([0x04, 0x01, 0x00, 0x00, 0x00,
+                       0x00, 0x00, 0x00, 0x00,
+                       0x00, 0x00, 0x00, 0x00]),
+            0xB5: Data([0x04, 0x11, 0x00, 0x00, 0x00,
+                       0x00, 0x00, 0x00, 0x00,
+                       0x00, 0x00, 0x00, 0x00])
+        ]
+        let brandTelemetry = try XCTUnwrap(AnkerSession.parseTelemetry(brandFields))
+        XCTAssertEqual(brandTelemetry.ports[0].deviceInfo, "Apple Device")
+        XCTAssertNil(brandTelemetry.ports[0].cableInfo)
+
+        let usbFields: [UInt8: Data] = [
+            0xA5: Data([0x04, 0x01, 0x84, 0x4E, 0xCA, 0x0D, 0xBC, 0x1B]),
+            0xA6: Data([0x04, 0x01, 0x8C, 0x23, 0xB4, 0x0A, 0xC4, 0x09]),
+            0xA7: Data([0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            0xAA: Data([0x01, 0x00]),
+            0xB4: Data([
+                0x04,
+                0xAC, 0x05, 0x19, 0x75,
+                0x1A, 0x29, 0x0A, 0x11,
+                0xAC, 0x05, 0x17, 0x71
+            ])
+        ]
+        let usbTelemetry = try XCTUnwrap(AnkerSession.parseTelemetry(usbFields))
+        XCTAssertEqual(usbTelemetry.ports[0].deviceInfo, "iPhone 17")
+        XCTAssertEqual(usbTelemetry.ports[1].deviceInfo, "Prime Power Bank 26K")
+        XCTAssertEqual(usbTelemetry.ports[1].chargingInfo, "Anker Protocol")
+        XCTAssertEqual(usbTelemetry.ports[2].deviceInfo, "iPad Pro")
+        XCTAssertNil(DeviceCatalog.usbDeviceLabel(vid: 0x1234, pid: 0x0001))
+        XCTAssertEqual(DeviceCatalog.usbDeviceLabel(vid: 0x05AC, pid: 0x9999), "Apple Device")
+        XCTAssertNil(DeviceCatalog.ankerProtocolLabel(vid: 0x291A, pid: 0x110A, isAIMode: false))
+    }
+
+    func testParsePortHistoryUsesMillivoltMilliampArrays() throws {
+        func packed(_ values: [UInt16]) -> Data {
+            var data = Data([0x04])
+            for value in values {
+                data.append(UInt8(truncatingIfNeeded: value))
+                data.append(UInt8(truncatingIfNeeded: value >> 8))
+            }
+            return data
+        }
+        let history = AnkerSession.parsePortHistory([
+            0xA2: packed([20_000, 20_100, 19_900, 20_050, 0xFFFF]),
+            0xA3: packed([9_000, 9_050, 8_950, 9_020, 0xFFFF]),
+            0xA5: packed([3_200, 3_150, 3_180, 3_210, 0xFFFF]),
+            0xA6: packed([2_200, 2_180, 2_210, 2_190, 0xFFFF])
+        ], at: Date(timeIntervalSince1970: 1_700_000_000))
+        let parsed = try XCTUnwrap(history)
+        XCTAssertEqual(parsed.ports.count, 2)
+        XCTAssertEqual(parsed.ports[0].voltages[0], 20.0, accuracy: 0.001)
+        XCTAssertEqual(parsed.ports[0].currents[0], 3.2, accuracy: 0.001)
+        XCTAssertEqual(parsed.ports[0].powers[0], 64.0, accuracy: 0.05)
+        XCTAssertEqual(parsed.ports[0].voltages[4], 0)
+        XCTAssertEqual(parsed.ports[0].currents[4], 0)
+    }
+
+    func testModernSessionEncodesModeDisplayAndHistoryPackets() throws {
+        let ready = try completeModernHandshake()
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+
+        let modePackets = try ready.session.makeChargingMode(.c1Priority, now: now)
+        XCTAssertEqual(modePackets.count, 2)
+        let modeFrame = try AnkerFrame.decode(modePackets[0])
+        XCTAssertEqual(modeFrame.command, 0x4206)
+        let allocationFrame = try AnkerFrame.decode(modePackets[1])
+        XCTAssertEqual(allocationFrame.command, 0x4205)
+        let allocationPlain = try AES128GCM.decrypt(
+            allocationFrame.payload,
+            key: ready.key,
+            nonce: ready.nonce,
+            authenticatedData: ready.aad
+        )
+        XCTAssertEqual(try AnkerTLV.parse(allocationPlain)[0xA2], Data([0x01, 0x01]))
+
+        let brightnessPacket = try ready.session.makeScreenBrightness(75, now: now)
+        let brightnessFrame = try AnkerFrame.decode(brightnessPacket)
+        XCTAssertEqual(brightnessFrame.command, 0x4204)
+        let brightnessPlain = try AES128GCM.decrypt(
+            brightnessFrame.payload,
+            key: ready.key,
+            nonce: ready.nonce,
+            authenticatedData: ready.aad
+        )
+        XCTAssertEqual(try AnkerTLV.parse(brightnessPlain)[0xA2], Data([0x01, 75]))
+
+        let historyPacket = try ready.session.makePortHistoryProbe(now: now)
+        let historyFrame = try AnkerFrame.decode(historyPacket)
+        XCTAssertEqual(historyFrame.pattern, Data([0x03, 0x00, 0x0F]))
+        XCTAssertEqual(historyFrame.command, 0x420C)
+        let historyPlain = try AES128GCM.decrypt(
+            historyFrame.payload,
+            key: ready.key,
+            nonce: ready.nonce,
+            authenticatedData: ready.aad
+        )
+        XCTAssertEqual(try AnkerTLV.parse(historyPlain)[0xA2], Data([0x01, 0x00]))
     }
 
     private func completeModernHandshake() throws -> (

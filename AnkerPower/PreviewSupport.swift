@@ -17,11 +17,13 @@ enum PreviewSample {
     static func connectedModel() -> AppModel {
         AppModel(
             previewState: .connected,
-            identity: ChargerIdentity(productName: "Anker Prime 160W"),
+            identity: ChargerIdentity(productName: "Anker Prime 160W", firmware: "1.5.1.2"),
             telemetry: telemetry,
             historySamples: historySamples(),
             diagnosticEntries: diagnosticEntries(),
-            canControlPorts: true
+            canControlPorts: true,
+            settings: ChargerSettings(brightnessPercent: 80, screenTimeout: .oneMinute),
+            chargerHistory: chargerHistory()
         )
     }
 
@@ -36,6 +38,7 @@ enum PreviewSample {
                     power: 64,
                     cableInfo: "E-Marker 240W",
                     chargingInfo: "PD 3.1",
+                    deviceInfo: "MacBook Pro",
                     isOutputEnabled: true
                 ),
                 PortTelemetry(
@@ -60,6 +63,27 @@ enum PreviewSample {
             ],
             receivedAt: Date(),
             chargingMode: .ai2
+        )
+    }
+
+    static func chargerHistory(now: Date = Date()) -> ChargerPortHistory {
+        let count = 48
+        return ChargerPortHistory(
+            capturedAt: now.addingTimeInterval(-TimeInterval(count)),
+            ports: (1...3).map { index in
+                PortHistorySeries(
+                    index: index,
+                    voltages: Array(repeating: index == 3 ? 5.0 : index == 2 ? 9.0 : 20.0, count: count),
+                    currents: (0..<count).map { step in
+                        let wave = 0.35 * sin(Double(step) / 6 + Double(index))
+                        switch index {
+                        case 1: return max(0, 3.1 + wave)
+                        case 2: return max(0, 2.1 + wave)
+                        default: return max(0, 0.4 + wave * 0.4)
+                        }
+                    }
+                )
+            }
         )
     }
 

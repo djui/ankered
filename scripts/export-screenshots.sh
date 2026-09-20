@@ -40,15 +40,3 @@ fi
 
 echo "Wrote screenshots to $DEST"
 ls -l "$DEST"/menu.png "$DEST"/history.png "$DEST"/diagnostics.png
-
-
-APP="$DERIVED/Build/Products/Debug/AnkerPower.app"
-if [[ ! -d "$APP" ]]; then
-  echo "error: expected app at $APP" >&2
-  exit 1
-fi
-
-"$APP/Contents/MacOS/AnkerPower" --export-screenshots "$DEST"
-
-echo "Wrote screenshots to $DEST"
-ls -l "$DEST"/menu.png "$DEST"/history.png "$DEST"/diagnostics.png
