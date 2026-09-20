@@ -109,6 +109,17 @@ fi
 rm -rf "$APP_DIR"
 cp -R "$ARCHIVE_PATH/Products/Applications/$ARCHIVE_NAME.app" "$APP_DIR"
 
+echo "==> Ad-hoc signing with sandbox and Bluetooth entitlements"
+# Archive with CODE_SIGNING_ALLOWED=NO only linker-signs the binary. That
+# leaves Info.plist unbound and omits entitlements, so CoreBluetooth stays
+# `.unauthorized` after the user accepts the Bluetooth prompt.
+codesign --force --sign - \
+  --entitlements "$ROOT/AnkerPower/AnkerPower.entitlements" \
+  --options runtime \
+  --identifier com.djui.AnkerPower \
+  "$APP_DIR"
+codesign --verify --verbose=2 "$APP_DIR"
+
 echo "==> Zipping $ZIP_NAME"
 ditto -c -k --keepParent "$APP_DIR" "$ZIP_PATH"
 shasum -a 256 "$ZIP_PATH" | awk '{print $1 "  '"$ZIP_NAME"'"}' > "$CHECKSUM_PATH"
@@ -136,6 +147,10 @@ Native macOS menu-bar monitor for the Anker Prime Charger 160W (A2687).
 - Launch at login and optional idle-port notification
 - Native macOS app icon for Finder, Spotlight, and app listings
 - Current Anker-app handshake with AES-CBC fallback from [Anker-BLE](https://github.com/T-REX-XP/Anker-BLE)
+
+## Fixes
+
+- Ad-hoc GitHub Release builds now sign sandbox and Bluetooth entitlements, and recreate the BLE central after you Allow permission
 
 ## Not included
 

@@ -22,7 +22,9 @@ final class ChargerBluetooth: NSObject {
     weak var delegate: ChargerBluetoothDelegate?
 
     private let diagnostics: DiagnosticLog
-    private lazy var central = CBCentralManager(delegate: self, queue: .main)
+    private var central: CBCentralManager!
+    private var authorizationPoll: Timer?
+    private var didRecreateAfterAllow = false
     private var peripheral: CBPeripheral?
     private var writeCharacteristic: CBCharacteristic?
     private var notifyCharacteristic: CBCharacteristic?
@@ -46,10 +48,14 @@ final class ChargerBluetooth: NSObject {
 
     func start() {
         userRequestedDisconnect = false
+        didRecreateAfterAllow = false
         diagnostics.record("Starting Bluetooth controller", category: "App")
-        _ = central
-        if central.state == .poweredOn {
+        if central == nil {
+            recreateCentral(reason: "start")
+        } else if central.state == .poweredOn {
             scan()
+        } else if central.state == .unauthorized {
+            watchAuthorization()
         }
     }
 
@@ -58,6 +64,14 @@ final class ChargerBluetooth: NSObject {
         diagnostics.record("Manual reconnect requested", category: "App")
         let wasConnected = peripheral != nil
         disconnectCurrentPeripheral()
+        guard central != nil else {
+            start()
+            return
+        }
+        if central.state == .unauthorized {
+            recreateCentral(reason: "reconnect while unauthorized")
+            return
+        }
         if central.state == .poweredOn {
             if wasConnected {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) { [weak self] in
@@ -73,7 +87,7 @@ final class ChargerBluetooth: NSObject {
         userRequestedDisconnect = true
         diagnostics.record("Disconnect requested", category: "App")
         reconnectWorkItem?.cancel()
-        central.stopScan()
+        central?.stopScan()
         disconnectCurrentPeripheral()
         publish(.idle)
     }
@@ -425,10 +439,74 @@ final class ChargerBluetooth: NSObject {
             scheduleReconnect()
         }
     }
+
+    private func recreateCentral(reason: String) {
+        authorizationPoll?.invalidate()
+        authorizationPoll = nil
+        diagnostics.record(
+            "Creating Bluetooth central (\(reason)); authorization \(Self.authorizationName)",
+            category: "Bluetooth"
+        )
+        central?.delegate = nil
+        central = CBCentralManager(
+            delegate: self,
+            queue: .main,
+            options: [CBCentralManagerOptionShowPowerAlertKey: true]
+        )
+    }
+
+    private func watchAuthorization() {
+        guard authorizationPoll == nil else { return }
+        diagnostics.record(
+            "Waiting for Bluetooth permission (\(Self.authorizationName))",
+            category: "Bluetooth"
+        )
+        let timer = Timer(timeInterval: 0.4, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.checkAuthorization()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        authorizationPoll = timer
+        checkAuthorization()
+    }
+
+    private func checkAuthorization() {
+        switch CBCentralManager.authorization {
+        case .allowedAlways:
+            authorizationPoll?.invalidate()
+            authorizationPoll = nil
+            if central.state != .poweredOn, !didRecreateAfterAllow {
+                didRecreateAfterAllow = true
+                recreateCentral(reason: "permission granted")
+            }
+        case .denied, .restricted:
+            authorizationPoll?.invalidate()
+            authorizationPoll = nil
+            diagnostics.record(
+                "Bluetooth authorization is \(Self.authorizationName)",
+                level: .error,
+                category: "Bluetooth"
+            )
+        default:
+            break
+        }
+    }
+
+    private static var authorizationName: String {
+        switch CBCentralManager.authorization {
+        case .notDetermined: return "not determined"
+        case .restricted: return "restricted"
+        case .denied: return "denied"
+        case .allowedAlways: return "allowed"
+        @unknown default: return "unrecognized"
+        }
+    }
 }
 
 extension ChargerBluetooth: @preconcurrency CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        guard central === self.central else { return }
         diagnostics.record("CoreBluetooth state changed to \(central.state.debugName)", category: "Bluetooth")
         if central.state != .poweredOn {
             disconnectCurrentPeripheral()
@@ -440,6 +518,7 @@ extension ChargerBluetooth: @preconcurrency CBCentralManagerDelegate {
             publish(.bluetoothUnavailable("Bluetooth is off"))
         case .unauthorized:
             publish(.bluetoothUnavailable("Bluetooth permission is required"))
+            watchAuthorization()
         case .unsupported:
             publish(.bluetoothUnavailable("Bluetooth LE is unavailable"))
         case .resetting:
@@ -457,6 +536,7 @@ extension ChargerBluetooth: @preconcurrency CBCentralManagerDelegate {
         advertisementData: [String: Any],
         rssi RSSI: NSNumber
     ) {
+        guard central === self.central else { return }
         guard self.peripheral == nil else { return }
         guard looksLikeA2687(peripheral, advertisementData: advertisementData) else { return }
         let advertisedName = advertisementData[CBAdvertisementDataLocalNameKey] as? String

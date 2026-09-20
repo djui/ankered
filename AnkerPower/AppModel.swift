@@ -39,7 +39,11 @@ final class AppModel: ObservableObject {
         }
         bluetooth.delegate = self
         AppRuntime.model = self
-        bluetooth.start()
+        // Creating CBCentralManager during App.init() races the Bluetooth
+        // permission sheet and can leave the central stuck at `.unauthorized`.
+        DispatchQueue.main.async { [bluetooth] in
+            bluetooth.start()
+        }
     }
 
     /// In-memory sample used by SwiftUI previews and screenshot export. Does not start Bluetooth.
