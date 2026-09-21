@@ -4,11 +4,13 @@ import SwiftUI
 enum AuxiliaryWindow {
     case history
     case diagnostics
+    case settings
 
     var id: String {
         switch self {
         case .history: "history"
         case .diagnostics: "diagnostics"
+        case .settings: "settings"
         }
     }
 
@@ -16,7 +18,12 @@ enum AuxiliaryWindow {
         switch self {
         case .history: "Charging History"
         case .diagnostics: "Connection Diagnostics"
+        case .settings: "Settings"
         }
+    }
+
+    var presentsAsDialog: Bool {
+        self == .settings
     }
 
     static func open(_ window: AuxiliaryWindow, using openWindow: OpenWindowAction) {
@@ -37,6 +44,12 @@ enum AuxiliaryWindow {
                 }) else { return }
                 if nsWindow.isMiniaturized {
                     nsWindow.deminiaturize(nil)
+                }
+                if window.presentsAsDialog {
+                    nsWindow.styleMask.remove([.resizable, .miniaturizable])
+                    nsWindow.standardWindowButton(.miniaturizeButton)?.isHidden = true
+                    nsWindow.standardWindowButton(.zoomButton)?.isHidden = true
+                    nsWindow.center()
                 }
                 nsWindow.makeKeyAndOrderFront(nil)
                 nsWindow.orderFrontRegardless()
@@ -101,6 +114,10 @@ final class StatusItemContextMenu: NSObject {
         reconnectItem.target = self
         menu.addItem(reconnectItem)
 
+        let settingsItem = NSMenuItem(title: "Settings", action: #selector(openSettings), keyEquivalent: "")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
+
         let historyItem = NSMenuItem(title: "Charging History", action: #selector(openHistory), keyEquivalent: "")
         historyItem.target = self
         menu.addItem(historyItem)
@@ -132,6 +149,11 @@ final class StatusItemContextMenu: NSObject {
 
     @objc private func reconnectAction() {
         model?.reconnect()
+    }
+
+    @objc private func openSettings() {
+        guard let openWindow else { return }
+        AuxiliaryWindow.open(.settings, using: openWindow)
     }
 
     @objc private func openHistory() {

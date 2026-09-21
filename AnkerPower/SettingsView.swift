@@ -31,18 +31,23 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Settings")
-                .font(.headline)
+        HStack(alignment: .top, spacing: 28) {
+            VStack(alignment: .leading, spacing: 16) {
+                displaySection
+                Divider()
+                customSection
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            displaySection
-            Divider()
-            customSection
-            Divider()
-            macSection
+            VStack(alignment: .leading, spacing: 16) {
+                screensaverSection
+                Divider()
+                macSection
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(14)
-        .frame(width: 280)
+        .padding(20)
+        .frame(width: 680, alignment: .topLeading)
         .onAppear {
             customC1 = Int(model.settings.customSplit?.c1 ?? 0)
             customC2 = Int(model.settings.customSplit?.c2 ?? 0)
@@ -55,8 +60,7 @@ struct SettingsView: View {
 
     private var displaySection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Display")
-                .font(.subheadline.weight(.semibold))
+            sectionTitle("Display")
             HStack {
                 Text("Brightness")
                 Spacer()
@@ -109,16 +113,12 @@ struct SettingsView: View {
                 )
             )
             .disabled(!model.canControlPorts)
-
-            screensaverSection
         }
     }
 
     private var screensaverSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Screensaver")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            sectionTitle("Screensaver")
             Text("Square \(ScreensaverImage.pixelSize)×\(ScreensaverImage.pixelSize) looks sharpest.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -214,7 +214,7 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .frame(height: 64)
+            .frame(height: 120)
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
@@ -244,8 +244,7 @@ struct SettingsView: View {
 
     private var customSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Custom split")
-                .font(.subheadline.weight(.semibold))
+            sectionTitle("Custom split")
             Text("Each port 0 or 15–140 W, 160 W total.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -276,8 +275,7 @@ struct SettingsView: View {
 
     private var macSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("This Mac")
-                .font(.subheadline.weight(.semibold))
+            sectionTitle("This Mac")
             Toggle(
                 "Open at login",
                 isOn: Binding(
@@ -304,6 +302,11 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    private func sectionTitle(_ title: String) -> some View {
+        Text(title)
+            .font(.subheadline.weight(.semibold))
     }
 
     @ViewBuilder
@@ -357,5 +360,5 @@ struct SettingsView: View {
 
 #Preview("Settings") {
     SettingsView(model: PreviewSample.connectedModel())
-        .frame(width: 280)
+        .frame(width: 680)
 }

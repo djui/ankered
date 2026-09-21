@@ -231,7 +231,7 @@ enum ScreenshotExporter {
             )
             try write(
                 SettingsView(model: model)
-                    .frame(width: 280)
+                    .frame(width: 680)
                     .padding(2),
                 to: directory.appendingPathComponent("settings.png"),
                 scale: 2

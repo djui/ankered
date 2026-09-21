@@ -7,7 +7,6 @@ struct MenuContentView: View {
 
     @State private var confirmOffPort: Int?
     @State private var customTimerPort: Int?
-    @State private var showSettings = false
     @State private var customHours = 1
     @State private var customMinutes = 0
     @ObservedObject private var preferences: AppPreferences
@@ -25,19 +24,22 @@ struct MenuContentView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
-            Divider().padding(.vertical, 10)
+            VStack(alignment: .leading, spacing: 0) {
+                header
+                Divider().padding(.vertical, 10)
 
-            VStack(alignment: .leading, spacing: 13) {
-                ForEach(model.telemetry.ports) { port in
-                    portRow(port)
+                VStack(alignment: .leading, spacing: 13) {
+                    ForEach(model.telemetry.ports) { port in
+                        portRow(port)
+                    }
                 }
             }
+            .padding(.horizontal, 14)
+            .padding(.top, 14)
 
-            Divider().padding(.vertical, 10)
+            Divider().padding(.top, 10)
             statusToolbar
         }
-        .padding(14)
         .frame(width: 280)
         .overlay {
             confirmOverlay
@@ -50,9 +52,6 @@ struct MenuContentView: View {
             set: { if !$0 { customTimerPort = nil } }
         ), arrowEdge: .leading) {
             customTimerPopover
-        }
-        .popover(isPresented: $showSettings, arrowEdge: .leading) {
-            SettingsView(model: model)
         }
     }
 
@@ -290,7 +289,7 @@ struct MenuContentView: View {
     }
 
     private var statusToolbar: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Circle()
                     .fill(model.connectionState.isConnected ? Color.green : Color.secondary)
@@ -299,56 +298,41 @@ struct MenuContentView: View {
                     .font(.caption)
                     .lineLimit(1)
             }
+            .padding(.horizontal, 14)
+            .padding(.top, 10)
+            .padding(.bottom, 4)
 
-            HStack(spacing: 8) {
-                Button {
-                    if model.isPaused {
-                        model.resumeConnection()
-                    } else {
-                        model.pauseConnection()
-                    }
-                } label: {
-                    Label(
-                        model.isPaused ? "Resume" : "Pause",
-                        systemImage: model.isPaused ? "play.fill" : "pause.fill"
-                    )
+            MenuActionRow(
+                title: model.isPaused ? "Resume" : "Pause",
+                systemImage: model.isPaused ? "play" : "pause",
+                help: model.isPaused
+                    ? "Resume connection"
+                    : "Pause connection so another app can use the charger"
+            ) {
+                if model.isPaused {
+                    model.resumeConnection()
+                } else {
+                    model.pauseConnection()
                 }
-                .help(
-                    model.isPaused
-                        ? "Resume connection"
-                        : "Pause connection so another app can use the charger"
-                )
-                Spacer(minLength: 0)
-                Button { model.reconnect() } label: {
-                    Label("Reconnect", systemImage: "arrow.clockwise")
-                }
-                .help("Reconnect")
-                Spacer(minLength: 0)
-                Button { showSettings = true } label: {
-                    Label("Settings", systemImage: "gearshape")
-                }
-                .help("Settings")
-                Spacer(minLength: 0)
-                Button { AuxiliaryWindow.open(.diagnostics, using: openWindow) } label: {
-                    Label("Diagnostics", systemImage: "waveform.path.ecg")
-                }
-                .help("Diagnostics")
-                Spacer(minLength: 0)
-                Button { AuxiliaryWindow.open(.history, using: openWindow) } label: {
-                    Label("History", systemImage: "chart.xyaxis.line")
-                }
-                .help("Charging history")
-                Spacer(minLength: 0)
-                Button { NSApplication.shared.terminate(nil) } label: {
-                    Label("Quit", systemImage: "xmark.circle")
-                }
-                .help("Quit Anker Power")
             }
-            .frame(maxWidth: .infinity)
+            MenuActionRow(title: "Reconnect", systemImage: "arrow.clockwise", help: "Reconnect") {
+                model.reconnect()
+            }
+            MenuActionRow(title: "Settings", systemImage: "gearshape", help: "Settings") {
+                AuxiliaryWindow.open(.settings, using: openWindow)
+            }
+            MenuActionRow(title: "Diagnostics", systemImage: "waveform", help: "Diagnostics") {
+                AuxiliaryWindow.open(.diagnostics, using: openWindow)
+            }
+            MenuActionRow(title: "History", systemImage: "chart.xyaxis.line", help: "Charging history") {
+                AuxiliaryWindow.open(.history, using: openWindow)
+            }
+            Divider()
+            MenuActionRow(title: "Quit", systemImage: "xmark", help: "Quit Anker Power") {
+                NSApplication.shared.terminate(nil)
+            }
         }
-        .labelStyle(.iconOnly)
-        .buttonStyle(.bordered)
-        .controlSize(.small)
+        .padding(.bottom, 6)
     }
 
     @ViewBuilder
@@ -407,6 +391,49 @@ struct MenuContentView: View {
             return "\(minutes)m \(String(format: "%02d", seconds))s"
         }
         return "\(seconds)s"
+    }
+}
+
+struct MenuActionRow: View {
+    let title: String
+    var systemImage: String
+    var help: String?
+    let action: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: systemImage)
+                    .imageScale(.small)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16)
+                Text(title)
+                Spacer(minLength: 8)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isHovering ? Color.primary.opacity(0.08) : Color.clear)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .modifier(OptionalHelp(text: help))
+    }
+}
+
+private struct OptionalHelp: ViewModifier {
+    let text: String?
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let text {
+            content.help(text)
+        } else {
+            content
+        }
     }
 }
 
