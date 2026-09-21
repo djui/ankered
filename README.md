@@ -74,12 +74,13 @@ The app appears only in the menu bar. Click the bolt icon:
 - **Connected** — total watts in the menu-bar title; the popover lists C1–C3
 - **Charging mode** — AI 2.0, C1 Priority, Dual Laptop, or Custom
 - **Settings** — display, custom watt split, port names, launch at login, idle notify
+- **Pause** — drop the BLE session and stay in the menu bar so the official Anker app can connect; **Resume** to scan again
 - **Reconnect** — drop the current session and scan again
 - **Diagnostics** — handshake and protocol log
 - **History** — last 1 / 6 / 24 hours on this Mac, charger curve, CSV export
 - **Quit**
 
-Right-click the bolt icon for Reconnect, Charging History, Diagnostics, and Quit. Shortcuts can turn a port on or off while the app is running.
+Right-click the bolt icon for Pause/Resume, Reconnect, Charging History, Diagnostics, and Quit. Shortcuts can turn a port on or off while the app is running.
 
 If a connection fails, open Diagnostics and use **Copy All** when filing an issue.
 

@@ -47,6 +47,9 @@ private struct MenuBarStatusView: View {
                     Text(model.menuBarTitle)
                 }
                 .font(.system(.body, design: .default))
+            } else if model.isPaused {
+                Image(systemName: "pause.rectangle")
+                    .font(.system(.body, design: .default))
             } else {
                 Image(systemName: "bolt.square")
                     .font(.system(.body, design: .default))

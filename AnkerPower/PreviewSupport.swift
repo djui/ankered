@@ -38,6 +38,15 @@ enum PreviewSample {
         )
     }
 
+    static func pausedModel() -> AppModel {
+        AppModel(
+            previewState: .idle,
+            identity: ChargerIdentity(productName: "Anker Prime 160W", firmware: "1.5.1.2"),
+            telemetry: .empty,
+            isPaused: true
+        )
+    }
+
     static var telemetry: ChargerTelemetry {
         ChargerTelemetry(
             ports: [

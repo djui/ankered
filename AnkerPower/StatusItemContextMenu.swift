@@ -88,6 +88,15 @@ final class StatusItemContextMenu: NSObject {
         let menu = NSMenu()
         menu.autoenablesItems = false
 
+        let isPaused = model?.isPaused == true
+        let pauseItem = NSMenuItem(
+            title: isPaused ? "Resume Connection" : "Pause Connection",
+            action: isPaused ? #selector(resumeConnection) : #selector(pauseConnection),
+            keyEquivalent: ""
+        )
+        pauseItem.target = self
+        menu.addItem(pauseItem)
+
         let reconnectItem = NSMenuItem(title: "Reconnect", action: #selector(reconnectAction), keyEquivalent: "")
         reconnectItem.target = self
         menu.addItem(reconnectItem)
@@ -111,6 +120,14 @@ final class StatusItemContextMenu: NSObject {
         } else {
             menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
         }
+    }
+
+    @objc private func pauseConnection() {
+        model?.pauseConnection()
+    }
+
+    @objc private func resumeConnection() {
+        model?.resumeConnection()
     }
 
     @objc private func reconnectAction() {

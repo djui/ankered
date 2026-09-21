@@ -304,6 +304,15 @@ enum ChargerConnectionState: Equatable, Sendable {
     var isConnected: Bool {
         self == .connected
     }
+
+    var isConnectingActivity: Bool {
+        switch self {
+        case .scanning, .connecting, .discovering, .negotiating, .connected:
+            return true
+        case .bluetoothUnavailable, .idle, .failed:
+            return false
+        }
+    }
 }
 
 struct PowerHistorySample: Codable, Identifiable, Equatable, Sendable {

@@ -301,6 +301,24 @@ struct MenuContentView: View {
             }
 
             HStack(spacing: 8) {
+                Button {
+                    if model.isPaused {
+                        model.resumeConnection()
+                    } else {
+                        model.pauseConnection()
+                    }
+                } label: {
+                    Label(
+                        model.isPaused ? "Resume" : "Pause",
+                        systemImage: model.isPaused ? "play.fill" : "pause.fill"
+                    )
+                }
+                .help(
+                    model.isPaused
+                        ? "Resume connection"
+                        : "Pause connection so another app can use the charger"
+                )
+                Spacer(minLength: 0)
                 Button { model.reconnect() } label: {
                     Label("Reconnect", systemImage: "arrow.clockwise")
                 }
@@ -394,5 +412,10 @@ struct MenuContentView: View {
 
 #Preview("Menu") {
     MenuContentView(model: PreviewSample.connectedModel())
+        .frame(width: 280)
+}
+
+#Preview("Paused") {
+    MenuContentView(model: PreviewSample.pausedModel())
         .frame(width: 280)
 }

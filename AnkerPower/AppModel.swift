@@ -8,6 +8,7 @@ enum AppRuntime {
 @MainActor
 final class AppModel: ObservableObject {
     @Published private(set) var connectionState: ChargerConnectionState = .idle
+    @Published private(set) var isPaused = false
     @Published private(set) var identity = ChargerIdentity()
     @Published private(set) var telemetry = ChargerTelemetry.empty
     @Published private(set) var settings = ChargerSettings.empty
@@ -56,7 +57,8 @@ final class AppModel: ObservableObject {
         canControlPorts: Bool = true,
         settings: ChargerSettings = .empty,
         chargerHistory: ChargerPortHistory? = nil,
-        preferences: AppPreferences? = nil
+        preferences: AppPreferences? = nil,
+        isPaused: Bool = false
     ) {
         self.history = HistoryStore(persist: false, samples: historySamples)
         let diagnostics = DiagnosticLog()
@@ -65,6 +67,7 @@ final class AppModel: ObservableObject {
         self.bluetooth = nil
         self.previewCanControl = canControlPorts
         self.connectionState = previewState
+        self.isPaused = isPaused
         self.identity = identity
         self.telemetry = telemetry
         self.settings = settings
@@ -83,6 +86,12 @@ final class AppModel: ObservableObject {
     }
 
     var statusCaption: String {
+        if isPaused {
+            if identity.isEmpty {
+                return "Paused"
+            }
+            return "Paused · \(identity.displayName)"
+        }
         if connectionState.isConnected {
             if let firmware = identity.firmwareLabel {
                 return "\(identity.displayName) · \(firmware)"
@@ -99,7 +108,17 @@ final class AppModel: ObservableObject {
     }
 
     func reconnect() {
+        isPaused = false
         bluetooth?.reconnect()
+    }
+
+    func pauseConnection() {
+        isPaused = true
+        bluetooth?.disconnect()
+    }
+
+    func resumeConnection() {
+        reconnect()
     }
 
     func disconnect() {
@@ -399,6 +418,9 @@ final class AppModel: ObservableObject {
 extension AppModel: ChargerBluetoothDelegate {
     func chargerBluetooth(_ bluetooth: ChargerBluetooth, changedState state: ChargerConnectionState) {
         connectionState = state
+        if state.isConnectingActivity {
+            isPaused = false
+        }
         if !state.isConnected {
             telemetry = .empty
             portCommandsInFlight = []
