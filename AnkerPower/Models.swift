@@ -174,6 +174,7 @@ struct ChargerSettings: Equatable, Sendable {
     var language: ChargerLanguage? = nil
     var customSplit: CustomChargeSplit? = nil
     var fault: ChargerFault = .none
+    var screensaverReportedID: UInt16? = nil
 
     static let empty = ChargerSettings()
 }
@@ -187,6 +188,7 @@ struct ChargerSettingsUpdate: Equatable, Sendable {
     var chargingMode: ChargerChargingMode? = nil
     var customSplit: CustomChargeSplit? = nil
     var fault: ChargerFault? = nil
+    var screensaverReportedID: UInt16? = nil
 
     var isEmpty: Bool {
         brightnessPercent == nil
@@ -197,6 +199,7 @@ struct ChargerSettingsUpdate: Equatable, Sendable {
             && chargingMode == nil
             && customSplit == nil
             && fault == nil
+            && screensaverReportedID == nil
     }
 
     func merging(into settings: ChargerSettings) -> ChargerSettings {
@@ -208,6 +211,7 @@ struct ChargerSettingsUpdate: Equatable, Sendable {
         if let language { next.language = language }
         if let customSplit { next.customSplit = customSplit }
         if let fault { next.fault = fault }
+        if let screensaverReportedID { next.screensaverReportedID = screensaverReportedID }
         return next
     }
 }
@@ -336,5 +340,76 @@ struct PowerHistorySample: Codable, Identifiable, Equatable, Sendable {
 extension Collection {
     subscript(safe index: Index) -> Element? {
         indices.contains(index) ? self[index] : nil
+    }
+}
+
+enum ScreensaverTransferProgress: Equatable, Sendable {
+    case idle
+    case selecting
+    case uploading(current: Int, total: Int)
+    case verifying
+    case succeeded
+    case failed(String)
+
+    var label: String? {
+        switch self {
+        case .idle, .succeeded:
+            return nil
+        case .selecting:
+            return "Selecting screensaver…"
+        case .uploading(let current, let total):
+            return "Sending image \(current)/\(total)…"
+        case .verifying:
+            return "Confirming screensaver…"
+        case .failed(let message):
+            return message
+        }
+    }
+
+    var uploadCounts: (current: Int, total: Int)? {
+        if case .uploading(let current, let total) = self, total > 0 {
+            return (current, total)
+        }
+        return nil
+    }
+}
+
+enum ScreensaverTransferError: Error, Equatable, LocalizedError {
+    case emptyImage
+    case unreadableImage
+    case tooManyChunks(Int)
+    case sessionBusy
+    case disconnected
+    case timeout
+    case rejected(UInt8)
+    case pixelsMissing
+    case overrun
+    case indexMismatch(expected: Int, got: Int?)
+    case verifyMismatch(expected: UInt16, got: UInt16?)
+    case notReady
+
+    var errorDescription: String? {
+        switch self {
+        case .emptyImage: return "The screensaver image is empty"
+        case .unreadableImage: return "Could not read that image"
+        case .tooManyChunks(let count): return "Screensaver is too large (\(count) chunks)"
+        case .sessionBusy: return "A screensaver transfer is already running"
+        case .disconnected: return "The charger disconnected during the screensaver transfer"
+        case .timeout: return "The charger did not acknowledge the screensaver transfer"
+        case .rejected(let status): return "The charger rejected the screensaver command (status \(status))"
+        case .pixelsMissing: return "That picture is not stored on the charger"
+        case .overrun: return "Screensaver transfer overran the charger; wait and try again"
+        case .indexMismatch(let expected, let got):
+            if let got {
+                return "Screensaver chunk ACK expected \(expected), got \(got)"
+            }
+            return "Screensaver chunk ACK did not report index \(expected)"
+        case .verifyMismatch(let expected, let got):
+            if let got {
+                return "Charger still reports picture \(got), expected \(expected)"
+            }
+            return "Charger did not confirm picture \(expected)"
+        case .notReady: return "Screensaver control needs the modern Bluetooth session"
+        }
     }
 }

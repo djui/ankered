@@ -28,13 +28,15 @@ enum PreviewSample {
                 orientation: .up,
                 autoRotate: true,
                 language: .english,
-                customSplit: CustomChargeSplit(portWatts: [80, 60, 20])
+                customSplit: CustomChargeSplit(portWatts: [80, 60, 20]),
+                screensaverReportedID: screensaverSlots().first.map(\.reportedID)
             ),
             chargerHistory: chargerHistory(),
             preferences: AppPreferences(
                 previewNicknames: [1: "MacBook", 2: "iPhone"],
                 idleNotificationsEnabled: true
-            )
+            ),
+            screensaverSlots: screensaverSlots()
         )
     }
 
@@ -147,6 +149,38 @@ enum PreviewSample {
             )
         }
     }
+
+    static func screensaverPreviewImage() -> NSImage {
+        let size = NSSize(width: 320, height: 240)
+        let image = NSImage(size: size)
+        image.lockFocus()
+        NSColor.systemTeal.setFill()
+        NSBezierPath(rect: NSRect(origin: .zero, size: size)).fill()
+        NSColor.systemBlue.setFill()
+        NSBezierPath(ovalIn: NSRect(x: 80, y: 40, width: 160, height: 160)).fill()
+        image.unlockFocus()
+        return image
+    }
+
+    static func screensaverSlots() -> [ScreensaverSlot] {
+        let colors: [CGColor] = [
+            CGColor(red: 0.15, green: 0.45, blue: 0.75, alpha: 1),
+            CGColor(red: 0.75, green: 0.28, blue: 0.22, alpha: 1),
+            CGColor(red: 0.20, green: 0.62, blue: 0.38, alpha: 1)
+        ]
+        return colors.enumerated().compactMap { index, color in
+            guard let image = ScreensaverImage.solidImage(color: color),
+                  let plan = try? ScreensaverImage.encode(image: image, vignette: index == 0) else {
+                return nil
+            }
+            return ScreensaverSlot(
+                pictureID: plan.pictureID,
+                hash: plan.hash,
+                jpeg: plan.jpeg,
+                createdAt: Date().addingTimeInterval(TimeInterval(-60 * (3 - index)))
+            )
+        }
+    }
 }
 
 @MainActor
@@ -200,6 +234,15 @@ enum ScreenshotExporter {
                     .frame(width: 280)
                     .padding(2),
                 to: directory.appendingPathComponent("settings.png"),
+                scale: 2
+            )
+            if let image = PreviewSample.screensaverPreviewImage().screensaverCGImage {
+                model.beginScreensaverCrop(image: image)
+            }
+            try write(
+                ScreensaverCropView(model: model)
+                    .frame(width: 420),
+                to: directory.appendingPathComponent("screensaver.png"),
                 scale: 2
             )
         } catch {

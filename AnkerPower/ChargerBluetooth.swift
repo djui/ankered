@@ -9,6 +9,7 @@ protocol ChargerBluetoothDelegate: AnyObject {
     func chargerBluetooth(_ bluetooth: ChargerBluetooth, received control: PortControlUpdate)
     func chargerBluetooth(_ bluetooth: ChargerBluetooth, received settings: ChargerSettingsUpdate)
     func chargerBluetooth(_ bluetooth: ChargerBluetooth, received history: ChargerPortHistory)
+    func chargerBluetooth(_ bluetooth: ChargerBluetooth, screensaverProgress progress: ScreensaverTransferProgress)
 }
 
 @MainActor
@@ -40,6 +41,13 @@ final class ChargerBluetooth: NSObject {
     private var heartbeatTick = 0
     private var lastTelemetryAt: Date?
     private var didRequestPortHistory = false
+    private var screensaverTransferActive = false
+    private var screensaverAckContinuation: CheckedContinuation<AnkerControlAck, Error>?
+    private var screensaverWaitingCommand: UInt16?
+    private var screensaverAckTimeout: DispatchWorkItem?
+    private var screensaverIDContinuation: CheckedContinuation<UInt16, Error>?
+    private var screensaverIDTimeout: DispatchWorkItem?
+    private var screensaverExpectedID: UInt16?
 
     init(diagnostics: DiagnosticLog) {
         self.diagnostics = diagnostics
@@ -158,6 +166,174 @@ final class ChargerBluetooth: NSObject {
         queueWrite(try session.makeAutoRotate(enabled))
     }
 
+    func selectScreensaver(pictureID: UInt32, hash: UInt32) async throws {
+        try await performScreensaverTransfer {
+            try await sendScreensaverSelect(pictureID: pictureID, hash: hash, beforeUpload: false)
+            notifyScreensaverProgress(.verifying)
+            async let confirmed: Void = verifyScreensaverID(UInt16(truncatingIfNeeded: pictureID))
+            if let packet = try? session.makeStatusProbe() {
+                queueWrite(packet)
+            }
+            try await confirmed
+        }
+    }
+
+    func uploadScreensaver(_ plan: ScreensaverImage.Plan) async throws {
+        try await performScreensaverTransfer {
+            try await sendScreensaverSelect(pictureID: plan.pictureID, hash: plan.hash, beforeUpload: true)
+            notifyScreensaverProgress(.uploading(current: 0, total: plan.chunkCount))
+            queueWrite(try session.makeScreensaverTransferStart(
+                pictureID: plan.pictureID,
+                hash: plan.hash,
+                jpegByteCount: plan.jpeg.count,
+                chunkCount: plan.chunkCount
+            ))
+            let startAck = try await waitForScreensaverAck(command: 0x0220)
+            try throwIfScreensaverAckFailed(startAck)
+            for index in 0..<plan.chunkCount {
+                guard let payload = ScreensaverImage.chunk(plan.jpeg, at: index) else {
+                    throw ScreensaverTransferError.emptyImage
+                }
+                let checkpoint = AnkerSession.isScreensaverChunkAcknowledged(index: index, of: plan.chunkCount)
+                if index == 0 || checkpoint {
+                    notifyScreensaverProgress(.uploading(current: index + 1, total: plan.chunkCount))
+                    await Task.yield()
+                }
+                queueWrite(try session.makeScreensaverChunk(index: index, of: plan.chunkCount, payload: payload))
+                if checkpoint {
+                    let isFinal = index == plan.chunkCount - 1
+                    let ack = try await waitForScreensaverAck(command: 0x0221, timeout: isFinal ? 8 : 3)
+                    if !ack.acceptsScreensaverChunk(isFinal: isFinal) {
+                        try throwIfScreensaverAckFailed(ack)
+                    }
+                    if ack.status == 0x10 {
+                        diagnostics.record("Screensaver image stored on the charger", category: "Control")
+                    }
+                    let expected = index + 1
+                    if let next = ack.nextIndex, Int(next) != expected {
+                        throw ScreensaverTransferError.indexMismatch(expected: expected, got: Int(next))
+                    }
+                } else {
+                    try await Task.sleep(nanoseconds: 8_000_000)
+                }
+            }
+            notifyScreensaverProgress(.verifying)
+            async let confirmed: Void = verifyScreensaverID(plan.reportedID)
+            if let packet = try? session.makeStatusProbe() {
+                queueWrite(packet)
+            }
+            try await confirmed
+        }
+    }
+
+    private func sendScreensaverSelect(pictureID: UInt32, hash: UInt32, beforeUpload: Bool) async throws {
+        notifyScreensaverProgress(.selecting)
+        diagnostics.record("Selecting screensaver id=\(pictureID)", category: "Control")
+        queueWrite(try session.makeScreensaverSelect(pictureID: pictureID, hash: hash))
+        let ack = try await waitForScreensaverAck(command: 0x021F)
+        if ack.status == 0x11, beforeUpload {
+            diagnostics.record(
+                "Screensaver id=\(pictureID) has no pixels yet; continuing with transfer",
+                category: "Control"
+            )
+            return
+        }
+        try throwIfScreensaverAckFailed(ack)
+    }
+
+    private func throwIfScreensaverAckFailed(_ ack: AnkerControlAck) throws {
+        switch ack.status {
+        case 0:
+            return
+        case 0x11:
+            throw ScreensaverTransferError.pixelsMissing
+        case 0x12:
+            throw ScreensaverTransferError.overrun
+        default:
+            throw ScreensaverTransferError.rejected(ack.status)
+        }
+    }
+
+    private func performScreensaverTransfer(_ work: () async throws -> Void) async throws {
+        guard session.supportsPortControl else { throw ScreensaverTransferError.notReady }
+        guard !screensaverTransferActive else { throw ScreensaverTransferError.sessionBusy }
+        screensaverTransferActive = true
+        heartbeatTimer?.invalidate()
+        heartbeatTimer = nil
+        defer {
+            screensaverTransferActive = false
+            failScreensaverWaits(ScreensaverTransferError.disconnected)
+            if session.isReady, peripheral != nil {
+                startHeartbeat()
+            }
+        }
+        do {
+            try await work()
+            notifyScreensaverProgress(.succeeded)
+        } catch {
+            notifyScreensaverProgress(.failed(error.localizedDescription))
+            throw error
+        }
+    }
+
+    private func waitForScreensaverAck(command: UInt16, timeout: TimeInterval = 3) async throws -> AnkerControlAck {
+        try await withCheckedThrowingContinuation { continuation in
+            screensaverAckTimeout?.cancel()
+            screensaverAckContinuation = continuation
+            screensaverWaitingCommand = command
+            let timeoutItem = DispatchWorkItem { [weak self] in
+                self?.resumeScreensaverAck(.failure(ScreensaverTransferError.timeout))
+            }
+            screensaverAckTimeout = timeoutItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + timeout, execute: timeoutItem)
+        }
+    }
+
+    private func verifyScreensaverID(_ expected: UInt16, timeout: TimeInterval = 8) async throws {
+        screensaverExpectedID = expected
+        defer { screensaverExpectedID = nil }
+        _ = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<UInt16, Error>) in
+            screensaverIDTimeout?.cancel()
+            screensaverIDContinuation = continuation
+            let timeoutItem = DispatchWorkItem { [weak self] in
+                self?.resumeScreensaverID(.failure(ScreensaverTransferError.timeout))
+            }
+            screensaverIDTimeout = timeoutItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + timeout, execute: timeoutItem)
+        }
+    }
+
+    private func noteScreensaverReportedID(_ id: UInt16) {
+        guard let expected = screensaverExpectedID, id == expected else { return }
+        resumeScreensaverID(.success(id))
+    }
+
+    private func resumeScreensaverAck(_ result: Result<AnkerControlAck, Error>) {
+        screensaverAckTimeout?.cancel()
+        screensaverAckTimeout = nil
+        screensaverWaitingCommand = nil
+        guard let continuation = screensaverAckContinuation else { return }
+        screensaverAckContinuation = nil
+        continuation.resume(with: result)
+    }
+
+    private func resumeScreensaverID(_ result: Result<UInt16, Error>) {
+        screensaverIDTimeout?.cancel()
+        screensaverIDTimeout = nil
+        guard let continuation = screensaverIDContinuation else { return }
+        screensaverIDContinuation = nil
+        continuation.resume(with: result)
+    }
+
+    private func failScreensaverWaits(_ error: ScreensaverTransferError) {
+        resumeScreensaverAck(.failure(error))
+        resumeScreensaverID(.failure(error))
+    }
+
+    private func notifyScreensaverProgress(_ progress: ScreensaverTransferProgress) {
+        delegate?.chargerBluetooth(self, screensaverProgress: progress)
+    }
+
     private static func wirePortIndex(_ index: Int) throws -> UInt8 {
         guard (1...3).contains(index) else {
             throw AnkerProtocolError.invalidFrame("port number must be 1...3")
@@ -255,6 +431,7 @@ final class ChargerBluetooth: NSObject {
         handshakeTimeoutWorkItem?.cancel()
         pendingWrites.removeAll()
         awaitingWriteResponse = false
+        failScreensaverWaits(ScreensaverTransferError.disconnected)
         writeCharacteristic = nil
         notifyCharacteristic = nil
         frameDecoder = AnkerFrameStreamDecoder()
@@ -398,7 +575,7 @@ final class ChargerBluetooth: NSObject {
         heartbeatTick = 0
         heartbeatTimer = Timer.scheduledTimer(withTimeInterval: 6, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                guard let self, self.session.isReady else { return }
+                guard let self, self.session.isReady, !self.screensaverTransferActive else { return }
                 self.heartbeatTick += 1
                 switch self.session.transport {
                 case .modernAESGCM:
@@ -699,6 +876,14 @@ extension ChargerBluetooth: @preconcurrency CBPeripheralDelegate {
                     scheduleModernHandshakeFallback()
                 }
                 queueWrites(update.outboundPackets, spacing: update.becameReady ? 0.12 : 0)
+                if let ack = update.controlAck {
+                    if ack.command == screensaverWaitingCommand {
+                        resumeScreensaverAck(.success(ack))
+                    }
+                }
+                if let pictureID = update.settings?.screensaverReportedID {
+                    noteScreensaverReportedID(pictureID)
+                }
                 if let identity = update.identity {
                     diagnostics.record(
                         "Identity firmware=\(identity.firmwareLabel ?? "unknown") serial=\(identity.serialNumber == nil ? "none" : "present")",

@@ -8,10 +8,12 @@ final class AppPreferences: ObservableObject {
 
     private static let portLabelsKey = "portNicknames"
     private static let idleNotificationsKey = "idleNotificationsEnabled"
+    private static let screensaverVignetteKey = "screensaverVignetteEnabled"
     private static let identityFileName = "charger-identity.json"
 
     @Published var portNicknames: [Int: String]
     @Published var idleNotificationsEnabled: Bool
+    @Published var screensaverVignetteEnabled: Bool
     @Published private(set) var launchesAtLogin: Bool
 
     init() {
@@ -24,6 +26,11 @@ final class AppPreferences: ObservableObject {
         }
         self.portNicknames = nicknames
         self.idleNotificationsEnabled = UserDefaults.standard.bool(forKey: Self.idleNotificationsKey)
+        if UserDefaults.standard.object(forKey: Self.screensaverVignetteKey) == nil {
+            self.screensaverVignetteEnabled = true
+        } else {
+            self.screensaverVignetteEnabled = UserDefaults.standard.bool(forKey: Self.screensaverVignetteKey)
+        }
         self.launchesAtLogin = SMAppService.mainApp.status == .enabled
     }
 
@@ -31,11 +38,13 @@ final class AppPreferences: ObservableObject {
     init(
         previewNicknames: [Int: String] = [:],
         idleNotificationsEnabled: Bool = false,
-        launchesAtLogin: Bool = false
+        launchesAtLogin: Bool = false,
+        screensaverVignetteEnabled: Bool = true
     ) {
         self.portNicknames = previewNicknames
         self.idleNotificationsEnabled = idleNotificationsEnabled
         self.launchesAtLogin = launchesAtLogin
+        self.screensaverVignetteEnabled = screensaverVignetteEnabled
     }
 
     func displayName(forPort index: Int) -> String {
@@ -62,6 +71,11 @@ final class AppPreferences: ObservableObject {
         if enabled {
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
         }
+    }
+
+    func setScreensaverVignetteEnabled(_ enabled: Bool) {
+        screensaverVignetteEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: Self.screensaverVignetteKey)
     }
 
     func setLaunchesAtLogin(_ enabled: Bool) {

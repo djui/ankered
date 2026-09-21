@@ -32,6 +32,12 @@ struct AnkerPowerApp: App {
             DiagnosticsView(model: model)
         }
         .defaultSize(width: 860, height: 520)
+
+        Window("Screensaver", id: "screensaver-crop") {
+            ScreensaverCropView(model: model)
+        }
+        .defaultSize(width: 420, height: 560)
+        .windowResizability(.contentSize)
     }
 }
 

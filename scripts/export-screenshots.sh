@@ -39,4 +39,4 @@ fi
 "$APP/Contents/MacOS/AnkerPower" --export-screenshots "$DEST"
 
 echo "Wrote screenshots to $DEST"
-ls -l "$DEST"/menu.png "$DEST"/settings.png "$DEST"/history.png "$DEST"/diagnostics.png
+ls -l "$DEST"/menu.png "$DEST"/settings.png "$DEST"/history.png "$DEST"/diagnostics.png "$DEST"/screensaver.png

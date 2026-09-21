@@ -25,6 +25,8 @@
 		A00100000000000000000015 /* AppPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00100000000000000000015 /* AppPreferences.swift */; };
 		A00100000000000000000016 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00100000000000000000016 /* SettingsView.swift */; };
 		A00100000000000000000017 /* ChargerIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00100000000000000000017 /* ChargerIntents.swift */; };
+		A00100000000000000000018 /* ScreensaverImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00100000000000000000018 /* ScreensaverImage.swift */; };
+		A0010000000000000000001A /* ScreensaverCropView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0010000000000000000001A /* ScreensaverCropView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -59,6 +61,8 @@
 		B00100000000000000000015 /* AppPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPreferences.swift; sourceTree = "<group>"; };
 		B00100000000000000000016 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		B00100000000000000000017 /* ChargerIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChargerIntents.swift; sourceTree = "<group>"; };
+		B00100000000000000000018 /* ScreensaverImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreensaverImage.swift; sourceTree = "<group>"; };
+		B0010000000000000000001A /* ScreensaverCropView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreensaverCropView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -90,6 +94,8 @@
 				B00100000000000000000008 /* MenuContentView.swift */,
 				B00100000000000000000013 /* StatusItemContextMenu.swift */,
 				B00100000000000000000016 /* SettingsView.swift */,
+				B0010000000000000000001A /* ScreensaverCropView.swift */,
+				B00100000000000000000018 /* ScreensaverImage.swift */,
 				B00100000000000000000017 /* ChargerIntents.swift */,
 				B00100000000000000000009 /* HistoryView.swift */,
 				B0010000000000000000000F /* DiagnosticLog.swift */,
@@ -200,6 +206,8 @@
 				A00100000000000000000008 /* MenuContentView.swift in Sources */,
 				A00100000000000000000013 /* StatusItemContextMenu.swift in Sources */,
 				A00100000000000000000016 /* SettingsView.swift in Sources */,
+				A0010000000000000000001A /* ScreensaverCropView.swift in Sources */,
+				A00100000000000000000018 /* ScreensaverImage.swift in Sources */,
 				A00100000000000000000017 /* ChargerIntents.swift in Sources */,
 				A00100000000000000000009 /* HistoryView.swift in Sources */,
 				A0010000000000000000000C /* DiagnosticLog.swift in Sources */,

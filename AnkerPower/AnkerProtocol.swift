@@ -43,6 +43,11 @@ extension Data {
         map { String(format: "%02x", $0) }.joined()
     }
 
+    mutating func appendLittleEndian(_ value: UInt16) {
+        append(UInt8(truncatingIfNeeded: value))
+        append(UInt8(truncatingIfNeeded: value >> 8))
+    }
+
     mutating func appendLittleEndian(_ value: UInt32) {
         append(UInt8(truncatingIfNeeded: value))
         append(UInt8(truncatingIfNeeded: value >> 8))
@@ -304,6 +309,29 @@ struct PortControlUpdate: Equatable, Sendable {
     var remainingSeconds: UInt32? = nil
 }
 
+struct AnkerControlAck: Equatable, Sendable {
+    var command: UInt16
+    var status: UInt8
+    var nextIndex: UInt16? = nil
+
+    var isSuccess: Bool { status == 0 }
+
+    /// A new upload's opening `0x021F` ACKs `0x11` until the pixels land. Selecting an existing picture does not.
+    func acceptsScreensaverSelect(beforeUpload: Bool) -> Bool {
+        status == 0 || (beforeUpload && status == 0x11)
+    }
+
+    /// The last `0x0221` ACKs `0x10` once the JPEG is in flash. That is completion, measured on v0.0.5.2. The same status on an earlier checkpoint is not.
+    func acceptsScreensaverChunk(isFinal: Bool) -> Bool {
+        status == 0 || (isFinal && status == 0x10)
+    }
+
+    var diagnosticMessage: String {
+        let index = nextIndex.map { " next=\($0)" } ?? ""
+        return "Command 0x\(String(format: "%04X", command)) acknowledged status=\(status)\(index)"
+    }
+}
+
 struct AnkerSessionUpdate {
     var outboundPackets: [Data] = []
     var identity: ChargerIdentity?
@@ -311,6 +339,7 @@ struct AnkerSessionUpdate {
     var portControl: PortControlUpdate?
     var settings: ChargerSettingsUpdate?
     var portHistory: ChargerPortHistory?
+    var controlAck: AnkerControlAck?
     var becameReady = false
     var diagnostics: [String] = []
 }
@@ -802,6 +831,13 @@ private final class ModernAnkerSession {
                 variants.append(("typed", fields))
             }
 
+            if let ack = AnkerSession.parseScreensaverAck(command: command, plaintext: decoded.data) {
+                return AnkerSessionUpdate(
+                    controlAck: ack,
+                    diagnostics: [ack.diagnosticMessage]
+                )
+            }
+
             for variant in variants {
                 let fieldShape = variant.fields
                     .sorted { $0.key < $1.key }
@@ -973,6 +1009,57 @@ private final class ModernAnkerSession {
         try makeSetting(command: 0x020D, value: enabled ? 1 : 0, now: now)
     }
 
+    func makeScreensaverSelect(
+        pictureID: UInt32,
+        hash: UInt32,
+        now: Date = Date()
+    ) throws -> Data {
+        guard isReady else { throw AnkerProtocolError.sessionNotReady }
+        return try makePacket(
+            group: 0x0F,
+            command: 0x021F,
+            fields: AnkerSession.screensaverSelectFields(pictureID: pictureID, hash: hash, now: now)
+        )
+    }
+
+    func makeScreensaverTransferStart(
+        pictureID: UInt32,
+        hash: UInt32,
+        jpegByteCount: Int,
+        chunkCount: Int,
+        now: Date = Date()
+    ) throws -> Data {
+        guard isReady else { throw AnkerProtocolError.sessionNotReady }
+        return try makePacket(
+            group: 0x0F,
+            command: 0x0220,
+            fields: try AnkerSession.screensaverTransferStartFields(
+                pictureID: pictureID,
+                hash: hash,
+                jpegByteCount: jpegByteCount,
+                chunkCount: chunkCount,
+                now: now
+            )
+        )
+    }
+
+    func makeScreensaverChunk(
+        index: Int,
+        of chunkCount: Int,
+        payload: Data
+    ) throws -> Data {
+        guard isReady else { throw AnkerProtocolError.sessionNotReady }
+        return try makePacket(
+            group: 0x0F,
+            command: 0x0221,
+            fields: try AnkerSession.screensaverChunkFields(
+                index: index,
+                of: chunkCount,
+                payload: payload
+            )
+        )
+    }
+
     func makePortHistoryProbe(now: Date = Date()) throws -> Data {
         guard isReady else { throw AnkerProtocolError.sessionNotReady }
         return try makePacket(
@@ -1006,6 +1093,9 @@ private final class ModernAnkerSession {
         case 0x0209: return "Port shutdown timer acknowledged"
         case 0x020B: return "Screen orientation acknowledged"
         case 0x020D: return "Auto-rotate setting acknowledged"
+        case 0x021F: return "Screensaver select acknowledged"
+        case 0x0220: return "Screensaver transfer start acknowledged"
+        case 0x0221: return "Screensaver chunk acknowledged"
         default: return nil
         }
     }
@@ -1275,6 +1365,41 @@ final class AnkerSession {
         return try modern.makeAutoRotate(enabled, now: now)
     }
 
+    func makeScreensaverSelect(
+        pictureID: UInt32,
+        hash: UInt32,
+        now: Date = Date()
+    ) throws -> Data {
+        guard transport == .modernAESGCM else { throw AnkerProtocolError.sessionNotReady }
+        return try modern.makeScreensaverSelect(pictureID: pictureID, hash: hash, now: now)
+    }
+
+    func makeScreensaverTransferStart(
+        pictureID: UInt32,
+        hash: UInt32,
+        jpegByteCount: Int,
+        chunkCount: Int,
+        now: Date = Date()
+    ) throws -> Data {
+        guard transport == .modernAESGCM else { throw AnkerProtocolError.sessionNotReady }
+        return try modern.makeScreensaverTransferStart(
+            pictureID: pictureID,
+            hash: hash,
+            jpegByteCount: jpegByteCount,
+            chunkCount: chunkCount,
+            now: now
+        )
+    }
+
+    func makeScreensaverChunk(
+        index: Int,
+        of chunkCount: Int,
+        payload: Data
+    ) throws -> Data {
+        guard transport == .modernAESGCM else { throw AnkerProtocolError.sessionNotReady }
+        return try modern.makeScreensaverChunk(index: index, of: chunkCount, payload: payload)
+    }
+
     func makePortHistoryProbe(now: Date = Date()) throws -> Data {
         guard transport == .modernAESGCM else { throw AnkerProtocolError.sessionNotReady }
         return try modern.makePortHistoryProbe(now: now)
@@ -1319,6 +1444,111 @@ final class AnkerSession {
             (0xA4, Data([0x04]) + protocolArray),
             (0xFE, epochBytes(now))
         ]
+    }
+
+    static let screensaverURLPlaceholder = "SmallChargingUrl"
+    static let screensaverCustomType: UInt8 = 3
+    static let screensaverChunkPayloadSize = 156
+    static let screensaverAcknowledgeEvery = 10
+
+    static func screensaverSelectFields(
+        pictureID: UInt32,
+        hash: UInt32,
+        now: Date = Date()
+    ) -> [(UInt8, Data)] {
+        [
+            (0xA1, Data([0x21])),
+            (0xA3, typedU8(screensaverCustomType)),
+            (0xA4, typedBytes(u32Bytes(pictureID))),
+            (0xA5, typedBytes(u32Bytes(hash))),
+            (0xFD, typedText(screensaverURLPlaceholder)),
+            (0xFE, typedEpoch(now))
+        ]
+    }
+
+    static func screensaverTransferStartFields(
+        pictureID: UInt32,
+        hash: UInt32,
+        jpegByteCount: Int,
+        chunkCount: Int,
+        now: Date = Date()
+    ) throws -> [(UInt8, Data)] {
+        guard jpegByteCount > 0, jpegByteCount <= Int(UInt32.max) else {
+            throw AnkerProtocolError.invalidTLV("screensaver JPEG size is invalid")
+        }
+        guard (1...Int(UInt16.max)).contains(chunkCount) else {
+            throw AnkerProtocolError.invalidTLV("screensaver chunk count is invalid")
+        }
+        return [
+            (0xA1, Data([0x21])),
+            (0xA2, typedU8(1)),
+            (0xA3, typedBytes(u32Bytes(pictureID))),
+            (0xA4, typedBytes(u32Bytes(hash))),
+            (0xA5, typedU32(UInt32(jpegByteCount))),
+            (0xA6, typedU8(UInt8(screensaverAcknowledgeEvery))),
+            (0xA7, typedU16(UInt16(screensaverChunkPayloadSize))),
+            (0xA8, typedU16(UInt16(chunkCount))),
+            (0xFE, typedEpoch(now))
+        ]
+    }
+
+    static func screensaverChunkFields(
+        index: Int,
+        of chunkCount: Int,
+        payload: Data
+    ) throws -> [(UInt8, Data)] {
+        guard payload.count == screensaverChunkPayloadSize else {
+            throw AnkerProtocolError.invalidTLV("screensaver chunk must be \(screensaverChunkPayloadSize) bytes")
+        }
+        guard (1...Int(UInt16.max)).contains(chunkCount) else {
+            throw AnkerProtocolError.invalidTLV("screensaver chunk count is invalid")
+        }
+        guard (0..<chunkCount).contains(index) else {
+            throw AnkerProtocolError.invalidTLV("screensaver chunk index is out of range")
+        }
+        return [
+            (0xA1, Data([0x21])),
+            (0xA2, typedU16(UInt16(index))),
+            (0xA3, typedBytes(payload))
+        ]
+    }
+
+    static func isScreensaverChunkAcknowledged(index: Int, of chunkCount: Int) -> Bool {
+        index == chunkCount - 1 || (index + 1) % screensaverAcknowledgeEvery == 0
+    }
+
+    static func parseScreensaverAck(command: UInt16, plaintext: Data) -> AnkerControlAck? {
+        guard command == 0x021F || command == 0x0220 || command == 0x0221 else { return nil }
+        var status: UInt8 = 0
+        var payload = plaintext
+        if let first = payload.first, first != 0xA1 {
+            status = first
+            payload = Data(payload.dropFirst())
+        }
+        let fields = (try? AnkerTLV.parse(payload)) ?? [:]
+        let next: UInt16?
+        if let scalar = typedControlUnsigned(fields[0xA2]) {
+            next = UInt16(truncatingIfNeeded: scalar)
+        } else if let raw = fields[0xA2], raw.count == 2 {
+            next = UInt16(raw[0]) | (UInt16(raw[1]) << 8)
+        } else {
+            next = nil
+        }
+        return AnkerControlAck(command: command, status: status, nextIndex: next)
+    }
+
+    static func parseScreensaverPictureID(_ fields: [UInt8: Data]) -> UInt16? {
+        guard let raw = fields[0xE1] else { return nil }
+        let bytes: Data
+        if raw.first == 0x04, raw.count >= 11 {
+            bytes = Data(raw.dropFirst())
+        } else if raw.count >= 10 {
+            bytes = raw
+        } else {
+            return nil
+        }
+        let id = UInt16(bytes[bytes.startIndex + 2]) | (UInt16(bytes[bytes.startIndex + 3]) << 8)
+        return id
     }
 
     static func parseSettings(_ fields: [UInt8: Data], command: UInt16) -> ChargerSettingsUpdate {
@@ -1370,6 +1600,9 @@ final class AnkerSession {
             }
             if let mode = parseTelemetry(fields)?.chargingMode {
                 update.chargingMode = mode
+            }
+            if let pictureID = parseScreensaverPictureID(fields) {
+                update.screensaverReportedID = pictureID
             }
         case 0x0301:
             if let code = a2 ?? typedControlUnsigned(fields[0xA1]), code <= 63 {
@@ -1517,6 +1750,40 @@ final class AnkerSession {
     private static func typedUInt8(_ data: Data?) -> UInt32? {
         guard let data, data.first == 0x01, data.count >= 2 else { return nil }
         return UInt32(data[1])
+    }
+
+    private static func typedU8(_ value: UInt8) -> Data {
+        Data([0x01, value])
+    }
+
+    private static func typedU16(_ value: UInt16) -> Data {
+        var data = Data([0x02])
+        data.appendLittleEndian(value)
+        return data
+    }
+
+    private static func typedU32(_ value: UInt32) -> Data {
+        var data = Data([0x03])
+        data.appendLittleEndian(value)
+        return data
+    }
+
+    private static func typedBytes(_ value: Data) -> Data {
+        Data([0x04]) + value
+    }
+
+    private static func typedText(_ value: String) -> Data {
+        Data([0x00]) + Data(value.utf8)
+    }
+
+    private static func typedEpoch(_ date: Date) -> Data {
+        typedU32(UInt32(max(0, date.timeIntervalSince1970)))
+    }
+
+    private static func u32Bytes(_ value: UInt32) -> Data {
+        var data = Data()
+        data.appendLittleEndian(value)
+        return data
     }
 
     private static func validatePortIndex(_ portIndex: UInt8) throws {

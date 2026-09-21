@@ -20,3 +20,26 @@ The app-compatible AES-GCM handshake sequence and telemetry command research wer
 https://github.com/Hyper-Beast/Anker_Prime_160W_WebBLE
 
 No JavaScript, HTML, images, or other assets from that repository are distributed with this application.
+
+Screensaver cover-transfer field layout (`0x021F` / `0x0220` / `0x0221`) was cross-checked against public reverse-engineering notes in:
+
+**anker-prime-ble**  
+https://github.com/LYJW131/anker-prime-ble
+
+No Python, captures, or other assets from that repository are distributed with this application.
+
+Cover-transfer arithmetic (JPEG size, 156-byte chunks, IEEE CRC-32, ACK-every-10 pacing) was cross-checked against:
+
+**Charker**  
+Copyright (c) 2026 qzz0518  
+https://github.com/qzz0518/Charker
+
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+No Swift sources from that repository are distributed with this application.

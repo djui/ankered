@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 @MainActor
@@ -14,9 +15,12 @@ final class AppModel: ObservableObject {
     @Published private(set) var settings = ChargerSettings.empty
     @Published private(set) var chargerHistory: ChargerPortHistory?
     @Published private(set) var portCommandsInFlight: Set<Int> = []
+    @Published private(set) var screensaverProgress: ScreensaverTransferProgress = .idle
+    @Published var screensaverCropImage: CGImage?
     @Published var preferences: AppPreferences
 
     let history: HistoryStore
+    let screensaverStore: ScreensaverStore
     let diagnostics: DiagnosticLog
 
     private let bluetooth: ChargerBluetooth?
@@ -31,6 +35,7 @@ final class AppModel: ObservableObject {
         let bluetooth = ChargerBluetooth(diagnostics: diagnostics)
         let preferences = AppPreferences.shared
         self.history = HistoryStore()
+        self.screensaverStore = ScreensaverStore()
         self.diagnostics = diagnostics
         self.bluetooth = bluetooth
         self.previewCanControl = false
@@ -58,9 +63,11 @@ final class AppModel: ObservableObject {
         settings: ChargerSettings = .empty,
         chargerHistory: ChargerPortHistory? = nil,
         preferences: AppPreferences? = nil,
-        isPaused: Bool = false
+        isPaused: Bool = false,
+        screensaverSlots: [ScreensaverSlot] = []
     ) {
         self.history = HistoryStore(persist: false, samples: historySamples)
+        self.screensaverStore = ScreensaverStore(persist: false, slots: screensaverSlots)
         let diagnostics = DiagnosticLog()
         diagnostics.seedForPreview(diagnosticEntries)
         self.diagnostics = diagnostics
@@ -271,6 +278,68 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func beginScreensaverCrop(image: CGImage) {
+        screensaverCropImage = image
+    }
+
+    func cancelScreensaverCrop() {
+        screensaverCropImage = nil
+    }
+
+    func selectScreensaver(_ slot: ScreensaverSlot) {
+        guard canControlPorts else { return }
+        let previous = settings.screensaverReportedID
+        settings.screensaverReportedID = slot.reportedID
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.bluetooth?.selectScreensaver(pictureID: slot.pictureID, hash: slot.hash)
+            } catch {
+                if self.settings.screensaverReportedID == slot.reportedID {
+                    self.settings.screensaverReportedID = previous
+                }
+                self.diagnostics.record(
+                    "Could not select screensaver: \(error.localizedDescription)",
+                    level: .error,
+                    category: "Control"
+                )
+            }
+        }
+    }
+
+    func uploadScreensaver(image: CGImage, crop: ScreensaverImage.Crop, vignette: Bool) {
+        guard canControlPorts else { return }
+        do {
+            let plan = try ScreensaverImage.encode(image: image, crop: crop, vignette: vignette)
+            let previous = settings.screensaverReportedID
+            settings.screensaverReportedID = plan.reportedID
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    try await self.bluetooth?.uploadScreensaver(plan)
+                    self.screensaverStore.add(plan)
+                    self.screensaverCropImage = nil
+                } catch {
+                    if self.settings.screensaverReportedID == plan.reportedID {
+                        self.settings.screensaverReportedID = previous
+                    }
+                    self.diagnostics.record(
+                        "Could not upload screensaver: \(error.localizedDescription)",
+                        level: .error,
+                        category: "Control"
+                    )
+                }
+            }
+        } catch {
+            diagnostics.record(
+                "Could not encode screensaver: \(error.localizedDescription)",
+                level: .error,
+                category: "Control"
+            )
+            screensaverProgress = .failed(error.localizedDescription)
+        }
+    }
+
     func noteTimerExpired(portIndex: Int) {
         guard let port = telemetry.ports[safe: portIndex - 1],
               let end = port.shutdownEndsAt, end <= Date() else { return }
@@ -386,6 +455,9 @@ final class AppModel: ObservableObject {
         } else {
             settings = update.merging(into: settings)
         }
+        if let pictureID = update.screensaverReportedID {
+            settings.screensaverReportedID = pictureID
+        }
     }
 
     private func noteIdlePorts(in telemetry: ChargerTelemetry) {
@@ -453,5 +525,9 @@ extension AppModel: ChargerBluetoothDelegate {
 
     func chargerBluetooth(_ bluetooth: ChargerBluetooth, received history: ChargerPortHistory) {
         chargerHistory = history
+    }
+
+    func chargerBluetooth(_ bluetooth: ChargerBluetooth, screensaverProgress progress: ScreensaverTransferProgress) {
+        screensaverProgress = progress
     }
 }

@@ -26,6 +26,10 @@ The app lives in the menu bar (`LSUIElement`). It connects locally over Bluetoot
   <img src="docs/screenshots/diagnostics.png" alt="Connection diagnostics window" width="48%">
 </p>
 
+<p>
+  <img src="docs/screenshots/screensaver.png" alt="Screensaver crop window" width="48%">
+</p>
+
 ## What's included
 
 - macOS 14+ menu-bar app for **A2687 only**
@@ -33,6 +37,7 @@ The app lives in the menu bar (`LSUIElement`). It connects locally over Bluetoot
 - Menu-bar title with **total watts** while connected (bolt icon when idle)
 - Per-port watts, volts, and amps, plus firmware under the product name
 - Charging-mode picker (AI 2.0, C1 Priority, Dual Laptop, Custom) and display settings (brightness, timeout, rotation, language)
+- Custom screensaver image over BLE: four local slots, in-app crop, optional black edge blend (no Anker account)
 - Optional cable / charging / device strings, including a small USB VID/PID table (unknown models stay at brand level)
 - Port output on/off, per-port shutdown timers, and optional port nicknames (modern AES-GCM session)
 - Rolling 24-hour Mac history, optional charger-side curve, CSV export, and a local watt-hour estimate
@@ -44,6 +49,7 @@ The app lives in the menu bar (`LSUIElement`). It connects locally over Bluetoot
 
 - Firmware updates or OTA
 - Cloud protocol management (`0x021D`) or Anker account features
+- Cloud screensaver catalog, rename, or pictures set only in the official Anker app
 - iOS, iPadOS, Windows, Linux
 - Home Assistant, MQTT, or any other home-automation bridge
 - MagGo pads, power banks, Solix stations, or other Anker models
@@ -73,7 +79,7 @@ The app appears only in the menu bar. Click the bolt icon:
 
 - **Connected** — total watts in the menu-bar title; the popover lists C1–C3
 - **Charging mode** — AI 2.0, C1 Priority, Dual Laptop, or Custom
-- **Settings** — display, custom watt split, port names, launch at login, idle notify
+- **Settings** — display, screensaver slots, custom watt split, port names, launch at login, idle notify
 - **Pause** — drop the BLE session and stay in the menu bar so the official Anker app can connect; **Resume** to scan again
 - **Reconnect** — drop the current session and scan again
 - **Diagnostics** — handshake and protocol log
@@ -106,13 +112,13 @@ Cut a local archive (and optionally a GitHub Release) with:
 
 ## Privacy
 
-All charger telemetry and history stay on the Mac. Up to 24 hours of samples and last-known charger identity are stored in the app's Application Support container (`~/Library/Application Support/AnkerPower/`). Port nicknames live in UserDefaults. The app makes no network requests.
+All charger telemetry and history stay on the Mac. Up to 24 hours of samples, last-known charger identity, and locally uploaded screensaver JPEGs are stored in the app's Application Support container (`~/Library/Application Support/AnkerPower/`). Port nicknames live in UserDefaults. The app makes no network requests.
 
 ## Protocol
 
 This is an unofficial implementation. The A2687 BLE protocol is not a public Anker API and may change with charger firmware.
 
-The app first performs the current app-compatible, ephemeral P-256 ECDH/AES-GCM session and polls `0x020A`/`0x0200`. After the session is ready it also requests charger-side history once (`0x020C`). If that handshake does not answer, it falls back to the older AES-CBC flow and `0x4200` telemetry subscription documented by the MIT-licensed [T-REX-XP/Anker-BLE](https://github.com/T-REX-XP/Anker-BLE) project. Mode, display, port control, and history are available on the modern session only. Charger-button changes arrive as `0x0300`–`0x030B` reports.
+The app first performs the current app-compatible, ephemeral P-256 ECDH/AES-GCM session and polls `0x020A`/`0x0200`. After the session is ready it also requests charger-side history once (`0x020C`). If that handshake does not answer, it falls back to the older AES-CBC flow and `0x4200` telemetry subscription documented by the MIT-licensed [T-REX-XP/Anker-BLE](https://github.com/T-REX-XP/Anker-BLE) project. Mode, display, port control, screensaver select/upload, and history are available on the modern session only. Charger-button changes arrive as `0x0300`–`0x030B` reports.
 
 ## Credits
 
@@ -123,6 +129,11 @@ Protocol constants, FF09 framing, negotiation, ECDH/AES-CBC behavior, and teleme
 The app-compatible AES-GCM handshake and telemetry commands were cross-checked against public reverse-engineering notes in:
 
 - **[Anker Prime 160W WebBLE (A2687)](https://github.com/Hyper-Beast/Anker_Prime_160W_WebBLE)** — research only; no code or assets from that repository are distributed here.
+
+Screensaver cover-transfer layout (`0x021F` / `0x0220` / `0x0221`, 240×240 JPEG chunks, ACK pacing) was reimplemented from public notes in:
+
+- **[anker-prime-ble](https://github.com/LYJW131/anker-prime-ble)** — research only; no Python or assets from that repository are distributed here.
+- **[Charker](https://github.com/qzz0518/Charker)** — Copyright (c) 2026 qzz0518, MIT License. Arithmetic cross-check only; no Swift sources from that repository are distributed here. Full notice: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## License
 

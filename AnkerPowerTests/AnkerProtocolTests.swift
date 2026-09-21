@@ -1,3 +1,4 @@
+import CoreGraphics
 import CryptoKit
 import XCTest
 @testable import AnkerPower
@@ -368,6 +369,9 @@ final class AnkerProtocolTests: XCTestCase {
         XCTAssertThrowsError(try session.makeChargingMode(.ai2))
         XCTAssertThrowsError(try session.makeLanguage(.english))
         XCTAssertThrowsError(try session.makePortHistoryProbe())
+        XCTAssertThrowsError(try session.makeScreensaverSelect(pictureID: 1, hash: 1))
+        XCTAssertThrowsError(try session.makeScreensaverTransferStart(pictureID: 1, hash: 1, jpegByteCount: 10, chunkCount: 1))
+        XCTAssertThrowsError(try session.makeScreensaverChunk(index: 0, of: 1, payload: Data(count: 156)))
     }
 
     func testChargingModeAndDisplayTLVLayouts() throws {
@@ -428,6 +432,127 @@ final class AnkerProtocolTests: XCTestCase {
             command: 0x0200
         )
         XCTAssertNil(ignoredWideFault.fault)
+    }
+
+    func testScreensaverTLVLayoutsAndE1() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let select = try AnkerTLV.parse(try AnkerTLV.build(
+            AnkerSession.screensaverSelectFields(pictureID: 0x0000_5FE7, hash: 0x1DA2_DDCA, now: now)
+        ))
+        XCTAssertEqual(try AnkerTLV.build(
+            AnkerSession.screensaverSelectFields(pictureID: 0x0000_5FE7, hash: 0x1DA2_DDCA, now: now)
+        ).count, 47)
+        XCTAssertEqual(select[0xA1]?.hexString, "21")
+        XCTAssertEqual(select[0xA3]?.hexString, "0103")
+        XCTAssertEqual(select[0xA4]?.hexString, "04e75f0000")
+        XCTAssertEqual(select[0xA5]?.hexString, "04cadda21d")
+        XCTAssertEqual(select[0xFD]?.first, 0x00)
+        XCTAssertEqual(String(data: select[0xFD]!.dropFirst(), encoding: .utf8), "SmallChargingUrl")
+        XCTAssertEqual(select[0xFE]?.hexString, "0300f15365")
+        let settingsEpoch = try AnkerTLV.parse(try AnkerTLV.build(AnkerSession.singleValueFields(80, now: now)))
+        XCTAssertEqual(settingsEpoch[0xFE]?.hexString, "00f15365")
+
+        let start = try AnkerTLV.build(try AnkerSession.screensaverTransferStartFields(
+            pictureID: 1,
+            hash: 2,
+            jpegByteCount: 25_397,
+            chunkCount: 163,
+            now: now
+        ))
+        XCTAssertEqual(start.count, 49)
+        let startFields = try AnkerTLV.parse(start)
+        XCTAssertEqual(startFields[0xA6]?.hexString, "010a")
+        XCTAssertEqual(startFields[0xA7]?.hexString, "029c00")
+        XCTAssertEqual(startFields[0xA8]?.hexString, "02a300")
+        XCTAssertEqual(startFields[0xA5]?.hexString, "0335630000")
+
+        var chunkPayload = Data([0xFF, 0xD8])
+        chunkPayload.append(Data(count: 154))
+        let chunk = try AnkerTLV.build(try AnkerSession.screensaverChunkFields(
+            index: 0,
+            of: 163,
+            payload: chunkPayload
+        ))
+        XCTAssertEqual(chunk.count, 167)
+
+        XCTAssertFalse(AnkerSession.isScreensaverChunkAcknowledged(index: 8, of: 163))
+        XCTAssertTrue(AnkerSession.isScreensaverChunkAcknowledged(index: 9, of: 163))
+        XCTAssertTrue(AnkerSession.isScreensaverChunkAcknowledged(index: 162, of: 163))
+        XCTAssertTrue(AnkerSession.isScreensaverChunkAcknowledged(index: 0, of: 1))
+
+        let e1 = Data([0x04, 0x80, 0x03, 0xE7, 0x5F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+        XCTAssertEqual(AnkerSession.parseScreensaverPictureID([0xE1: e1]), 0x5FE7)
+        let e1Raw = Data([0x80, 0x03, 0xE7, 0x5F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+        XCTAssertEqual(AnkerSession.parseScreensaverPictureID([0xE1: e1Raw]), 0x5FE7)
+        let parsed = AnkerSession.parseSettings([0xE1: e1], command: 0x0300)
+        XCTAssertEqual(parsed.screensaverReportedID, 0x5FE7)
+
+        let selectAck = AnkerSession.parseScreensaverAck(
+            command: 0x021F,
+            plaintext: Data([0x00, 0xA1, 0x01, 0x31])
+        )
+        XCTAssertEqual(selectAck?.status, 0)
+        XCTAssertNil(selectAck?.nextIndex)
+
+        let ack = AnkerSession.parseScreensaverAck(
+            command: 0x0221,
+            plaintext: Data([0x00, 0xA1, 0x01, 0x31, 0xA2, 0x02, 0x0A, 0x00])
+        )
+        XCTAssertEqual(ack?.status, 0)
+        XCTAssertEqual(ack?.nextIndex, 10)
+
+        let missingPixels = AnkerControlAck(command: 0x021F, status: 0x11)
+        XCTAssertFalse(missingPixels.acceptsScreensaverSelect(beforeUpload: false))
+        XCTAssertTrue(missingPixels.acceptsScreensaverSelect(beforeUpload: true))
+        let stored = AnkerControlAck(command: 0x021F, status: 0)
+        XCTAssertTrue(stored.acceptsScreensaverSelect(beforeUpload: false))
+
+        let storedImage = AnkerControlAck(command: 0x0221, status: 0x10, nextIndex: 83)
+        XCTAssertTrue(storedImage.acceptsScreensaverChunk(isFinal: true))
+        XCTAssertFalse(storedImage.acceptsScreensaverChunk(isFinal: false))
+        let checkpoint = AnkerControlAck(command: 0x0221, status: 0, nextIndex: 10)
+        XCTAssertTrue(checkpoint.acceptsScreensaverChunk(isFinal: false))
+    }
+
+    func testScreensaverCRCChunksAndVignette() throws {
+        XCTAssertEqual(ScreensaverImage.crc32(Data("123456789".utf8)), 0xCBF4_3926)
+
+        let jpeg = Data(repeating: 0xAB, count: 200)
+        XCTAssertEqual(ScreensaverImage.chunkCount(forByteCount: jpeg.count), 2)
+        let first = try XCTUnwrap(ScreensaverImage.chunk(jpeg, at: 0))
+        let last = try XCTUnwrap(ScreensaverImage.chunk(jpeg, at: 1))
+        XCTAssertEqual(first.count, 156)
+        XCTAssertEqual(last.count, 156)
+        XCTAssertEqual(Data(last[44..<156]), Data(count: 112))
+
+        let white = try XCTUnwrap(ScreensaverImage.solidImage(color: CGColor(gray: 1, alpha: 1)))
+        let plain = try XCTUnwrap(ScreensaverImage.render(image: white, crop: .identity, vignette: false))
+        let faded = try XCTUnwrap(ScreensaverImage.render(image: white, crop: .identity, vignette: true))
+        XCTAssertGreaterThan(luma(plain, x: 0, y: 0), 250)
+        XCTAssertLessThan(luma(faded, x: 0, y: 0), 20)
+        XCTAssertGreaterThan(luma(faded, x: 120, y: 120), 250)
+
+        let plan = try ScreensaverImage.encode(image: white, vignette: false)
+        XCTAssertEqual(plan.pictureID, plan.hash)
+        XCTAssertGreaterThan(plan.chunkCount, 0)
+        XCTAssertEqual(UInt16(truncatingIfNeeded: plan.pictureID), plan.reportedID)
+    }
+
+    private func luma(_ image: CGImage, x: Int, y: Int) -> Int {
+        guard let cropped = image.cropping(to: CGRect(x: x, y: y, width: 1, height: 1)) else { return -1 }
+        var pixel = [UInt8](repeating: 0, count: 4)
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: &pixel,
+            width: 1,
+            height: 1,
+            bitsPerComponent: 8,
+            bytesPerRow: 4,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return -1 }
+        context.draw(cropped, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        return Int(pixel[0])
     }
 
     func testDeviceIdentityBrandVersusUsbVidPid() throws {
