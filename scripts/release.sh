@@ -150,7 +150,7 @@ Native macOS menu-bar monitor for the Anker Prime Charger 160W (A2687).
 
 ## Fixes
 
-- Ad-hoc GitHub Release builds now sign sandbox and Bluetooth entitlements, and recreate the BLE central after you Allow permission
+- Ignore the charger's 0xFFFF power marker so reconnects no longer spike the menu bar and history graph to 655 W
 
 ## Not included
 
