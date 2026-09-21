@@ -448,8 +448,8 @@ final class LegacyAnkerSession {
                     iv: Data(secret.dropFirst(16).prefix(16))
                 )
                 let fields = try AnkerTLV.parse(plaintext)
-                if let telemetry = Self.parseTelemetry(fields) {
-                    let command = frame.command & 0x37FF
+                let command = frame.command & 0x37FF
+                if !Self.isPortHistoryCommand(command), let telemetry = Self.parseTelemetry(fields) {
                     return AnkerSessionUpdate(
                         telemetry: telemetry,
                         settings: AnkerSession.parseSettings(fields, command: command),
@@ -513,17 +513,14 @@ final class LegacyAnkerSession {
         var foundPort = false
 
         for (offset, tag) in [UInt8(0xA5), 0xA6, 0xA7].enumerated() {
-            guard let value = fields[tag], value.count >= 8, value[0] == 0x04 else { continue }
-            let voltageMV = littleEndian16(value, at: 2)
-            let currentMA = littleEndian16(value, at: 4)
-            let powerCentiW = littleEndian16(value, at: 6)
-            let power = Double(powerCentiW) / 100
+            guard let value = fields[tag], value.count == 8, value[0] == 0x04,
+                  let reading = eightBytePortReading(value) else { continue }
             ports[offset] = PortTelemetry(
                 index: offset + 1,
-                isActive: value[1] != 0 && power > 0.05,
-                voltage: Double(voltageMV) / 1_000,
-                current: Double(currentMA) / 1_000,
-                power: power
+                isActive: value[1] != 0 && reading.power > 0.05,
+                voltage: reading.voltage,
+                current: reading.current,
+                power: reading.power
             )
             foundPort = true
         }
@@ -554,14 +551,14 @@ final class LegacyAnkerSession {
         // Some related Prime firmware reports an eight-byte port shape in A2/A3/A4.
         if !foundPort {
             for (offset, tag) in [UInt8(0xA2), 0xA3, 0xA4].enumerated() {
-                guard let value = fields[tag], value.count >= 8 else { continue }
-                let power = Double(littleEndian16(value, at: 6)) / 100
+                guard let value = fields[tag], value.count == 8,
+                      let reading = eightBytePortReading(value) else { continue }
                 ports[offset] = PortTelemetry(
                     index: offset + 1,
-                    isActive: power > 0.05,
-                    voltage: value[0] == 0x04 ? Double(littleEndian16(value, at: 2)) / 1_000 : 0,
-                    current: value[0] == 0x04 ? Double(littleEndian16(value, at: 4)) / 1_000 : 0,
-                    power: power
+                    isActive: reading.power > 0.05,
+                    voltage: reading.voltage,
+                    current: reading.current,
+                    power: reading.power
                 )
                 foundPort = true
             }
@@ -659,6 +656,40 @@ final class LegacyAnkerSession {
         case 4: return .custom
         default: return nil
         }
+    }
+
+    fileprivate static func isPortHistoryCommand(_ command: UInt16) -> Bool {
+        command == 0x020C || command == 0x0A0C
+    }
+
+    /// Live port reports are exactly eight bytes. Longer `0x04` blobs are history sample arrays.
+    /// `0xFFFF` is the charger's missing-sample marker; as centiwatts it would publish 655.35 W.
+    private static func eightBytePortReading(_ value: Data) -> (voltage: Double, current: Double, power: Double)? {
+        guard value.count == 8 else { return nil }
+        let voltageRaw = littleEndian16(value, at: 2)
+        let currentRaw = littleEndian16(value, at: 4)
+        let powerRaw = littleEndian16(value, at: 6)
+        let typed = value[0] == 0x04
+
+        func volts(_ raw: UInt16) -> Double? {
+            guard typed, raw != 0xFFFF, raw <= 48_000 else { return nil }
+            return Double(raw) / 1_000
+        }
+        func amps(_ raw: UInt16) -> Double? {
+            guard typed, raw != 0xFFFF, raw <= 5_500 else { return nil }
+            return Double(raw) / 1_000
+        }
+
+        let voltage = volts(voltageRaw)
+        let current = amps(currentRaw)
+        let power: Double
+        if powerRaw == 0xFFFF {
+            guard let voltage, let current else { return nil }
+            power = voltage * current
+        } else {
+            power = Double(powerRaw) / 100
+        }
+        return (voltage ?? 0, current ?? 0, power)
     }
 
     private static func typedByteArray(_ data: Data?) -> Data? {
@@ -846,7 +877,8 @@ private final class ModernAnkerSession {
                 var update = AnkerSessionUpdate()
                 var diagnostics: [String] = []
 
-                if let telemetry = LegacyAnkerSession.parseTelemetry(variant.fields) {
+                if !LegacyAnkerSession.isPortHistoryCommand(command),
+                   let telemetry = LegacyAnkerSession.parseTelemetry(variant.fields) {
                     lastSessionDecryptFailureAt = nil
                     diagnostics.append(
                         "Decoded \(decoded.source) \(variant.dialect) telemetry 0x\(Self.hex4(command)) TLVs [\(fieldShape)]"

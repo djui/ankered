@@ -33,6 +33,7 @@ final class HistoryStore: ObservableObject {
 
     func append(_ telemetry: ChargerTelemetry) {
         let sample = PowerHistorySample(timestamp: telemetry.receivedAt, ports: telemetry.ports)
+        guard Self.isPlausible(sample) else { return }
         if let last = samples.last, sample.timestamp.timeIntervalSince(last.timestamp) < 1 {
             samples[samples.count - 1] = sample
         } else {
@@ -70,6 +71,12 @@ final class HistoryStore: ObservableObject {
         }
     }
 
+    private static let maximumPortWatts = 200.0
+
+    private static func isPlausible(_ sample: PowerHistorySample) -> Bool {
+        [sample.port1, sample.port2, sample.port3].allSatisfy { $0 <= maximumPortWatts }
+    }
+
     private func trim() {
         let cutoff = Date().addingTimeInterval(-24 * 60 * 60)
         samples.removeAll { $0.timestamp < cutoff }
@@ -82,8 +89,11 @@ final class HistoryStore: ObservableObject {
         guard let historyURL,
               let data = try? Data(contentsOf: historyURL),
               let decoded = try? JSONDecoder().decode([PowerHistorySample].self, from: data) else { return }
-        samples = decoded
+        samples = decoded.filter(Self.isPlausible)
         trim()
+        if samples.count != decoded.count {
+            scheduleSave()
+        }
     }
 
     private func scheduleSave() {

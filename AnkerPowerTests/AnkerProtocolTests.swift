@@ -96,6 +96,31 @@ final class AnkerProtocolTests: XCTestCase {
         XCTAssertEqual(telemetry.totalPower, 96, accuracy: 0.001)
     }
 
+    func testTelemetryParserIgnoresPowerSentinelAndHistoryArrays() throws {
+        let missingPower: [UInt8: Data] = [
+            0xA5: Data([0x04, 0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF])
+        ]
+        XCTAssertNil(AnkerSession.parseTelemetry(missingPower))
+
+        let derivedFields: [UInt8: Data] = [
+            0xA5: Data([0x04, 0x01, 0x84, 0x4E, 0xCA, 0x0D, 0xFF, 0xFF])
+        ]
+        let derived = try XCTUnwrap(AnkerSession.parseTelemetry(derivedFields))
+        XCTAssertEqual(derived.ports[0].voltage, 20.1, accuracy: 0.001)
+        XCTAssertEqual(derived.ports[0].current, 3.53, accuracy: 0.001)
+        XCTAssertEqual(derived.ports[0].power, 20.1 * 3.53, accuracy: 0.001)
+        XCTAssertNotEqual(derived.ports[0].power, 655.35, accuracy: 0.01)
+
+        var history = Data([0x04])
+        for sample: UInt16 in [20_000, 20_100, 19_900, 20_050, 0xFFFF] {
+            history.append(UInt8(truncatingIfNeeded: sample))
+            history.append(UInt8(truncatingIfNeeded: sample >> 8))
+        }
+        XCTAssertGreaterThan(history.count, 8)
+        let historyFields: [UInt8: Data] = [0xA5: history]
+        XCTAssertNil(AnkerSession.parseTelemetry(historyFields))
+    }
+
     func testAESCBCRoundTrip() throws {
         let key = try Data(hex: "00112233445566778899aabbccddeeff")
         let iv = try Data(hex: "ffeeddccbbaa99887766554433221100")
