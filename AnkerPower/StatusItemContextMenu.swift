@@ -1,6 +1,26 @@
 import AppKit
 import SwiftUI
 
+enum AppAbout {
+    private static let homepageURL = URL(string: "https://djui.github.io/ankered/")!
+
+    static func show() {
+        let credits = NSMutableAttributedString(
+            string: "Homepage",
+            attributes: [
+                .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
+                .foregroundColor: NSColor.linkColor,
+                .link: homepageURL
+            ]
+        )
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        NSApplication.shared.orderFrontStandardAboutPanel(options: [
+            .applicationName: "Anker Power",
+            .credits: credits
+        ])
+    }
+}
+
 enum AuxiliaryWindow {
     case history
     case diagnostics
@@ -114,19 +134,19 @@ final class StatusItemContextMenu: NSObject {
         reconnectItem.target = self
         menu.addItem(reconnectItem)
 
-        let settingsItem = NSMenuItem(title: "Settings", action: #selector(openSettings), keyEquivalent: "")
-        settingsItem.target = self
-        menu.addItem(settingsItem)
-
         let historyItem = NSMenuItem(title: "Charging History", action: #selector(openHistory), keyEquivalent: "")
         historyItem.target = self
         menu.addItem(historyItem)
 
-        let diagnosticsItem = NSMenuItem(title: "Diagnostics", action: #selector(openDiagnostics), keyEquivalent: "")
-        diagnosticsItem.target = self
-        menu.addItem(diagnosticsItem)
-
         menu.addItem(.separator())
+
+        let settingsItem = NSMenuItem(title: "Settings", action: #selector(openSettings), keyEquivalent: "")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
+
+        let aboutItem = NSMenuItem(title: "About Anker Power", action: #selector(showAbout), keyEquivalent: "")
+        aboutItem.target = self
+        menu.addItem(aboutItem)
 
         let quitItem = NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "")
         quitItem.target = self
@@ -161,9 +181,8 @@ final class StatusItemContextMenu: NSObject {
         AuxiliaryWindow.open(.history, using: openWindow)
     }
 
-    @objc private func openDiagnostics() {
-        guard let openWindow else { return }
-        AuxiliaryWindow.open(.diagnostics, using: openWindow)
+    @objc private func showAbout() {
+        AppAbout.show()
     }
 
     @objc private func quitApp() {

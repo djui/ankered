@@ -311,6 +311,13 @@ struct SettingsView: View {
                     preferences.setNickname(nicknameDrafts[index] ?? "", forPort: index)
                 }
             }
+            Divider()
+            Button("Diagnostics…") {
+                AuxiliaryWindow.open(.diagnostics, using: openWindow)
+            }
+            Text("Connection log, firmware, serial, and MAC.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 

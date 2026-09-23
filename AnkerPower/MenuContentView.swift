@@ -318,16 +318,16 @@ struct MenuContentView: View {
             MenuActionRow(title: "Reconnect", systemImage: "arrow.clockwise", help: "Reconnect") {
                 model.reconnect()
             }
-            MenuActionRow(title: "Settings", systemImage: "gearshape", help: "Settings") {
-                AuxiliaryWindow.open(.settings, using: openWindow)
-            }
-            MenuActionRow(title: "Diagnostics", systemImage: "waveform", help: "Diagnostics") {
-                AuxiliaryWindow.open(.diagnostics, using: openWindow)
-            }
             MenuActionRow(title: "History", systemImage: "chart.xyaxis.line", help: "Charging history") {
                 AuxiliaryWindow.open(.history, using: openWindow)
             }
             Divider()
+            MenuActionRow(title: "Settings", systemImage: "gearshape", help: "Settings") {
+                AuxiliaryWindow.open(.settings, using: openWindow)
+            }
+            MenuActionRow(title: "About", systemImage: "info.circle", help: "About Anker Power") {
+                AppAbout.show()
+            }
             MenuActionRow(title: "Quit", systemImage: "xmark", help: "Quit Anker Power") {
                 NSApplication.shared.terminate(nil)
             }
