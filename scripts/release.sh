@@ -150,7 +150,7 @@ Native macOS menu-bar monitor for the Anker Prime Charger 160W (A2687).
 
 ## Fixes
 
-- Ignore the charger's 0xFFFF power marker so reconnects no longer spike the menu bar and history graph to 655 W
+- Scan in short bursts when the charger is away, and disconnect by default while the Mac sleeps so the laptop can idle. Charging history pauses until wake; turn the setting off under This Mac to keep recording
 
 ## Not included
 
