@@ -9,11 +9,13 @@ final class AppPreferences: ObservableObject {
     private static let portLabelsKey = "portNicknames"
     private static let idleNotificationsKey = "idleNotificationsEnabled"
     private static let screensaverVignetteKey = "screensaverVignetteEnabled"
+    private static let releaseBluetoothOnSleepKey = "releaseBluetoothOnSleep"
     private static let identityFileName = "charger-identity.json"
 
     @Published var portNicknames: [Int: String]
     @Published var idleNotificationsEnabled: Bool
     @Published var screensaverVignetteEnabled: Bool
+    @Published var releaseBluetoothOnSleep: Bool
     @Published private(set) var launchesAtLogin: Bool
 
     init() {
@@ -31,6 +33,11 @@ final class AppPreferences: ObservableObject {
         } else {
             self.screensaverVignetteEnabled = UserDefaults.standard.bool(forKey: Self.screensaverVignetteKey)
         }
+        if UserDefaults.standard.object(forKey: Self.releaseBluetoothOnSleepKey) == nil {
+            self.releaseBluetoothOnSleep = true
+        } else {
+            self.releaseBluetoothOnSleep = UserDefaults.standard.bool(forKey: Self.releaseBluetoothOnSleepKey)
+        }
         self.launchesAtLogin = SMAppService.mainApp.status == .enabled
     }
 
@@ -39,12 +46,14 @@ final class AppPreferences: ObservableObject {
         previewNicknames: [Int: String] = [:],
         idleNotificationsEnabled: Bool = false,
         launchesAtLogin: Bool = false,
-        screensaverVignetteEnabled: Bool = true
+        screensaverVignetteEnabled: Bool = true,
+        releaseBluetoothOnSleep: Bool = true
     ) {
         self.portNicknames = previewNicknames
         self.idleNotificationsEnabled = idleNotificationsEnabled
         self.launchesAtLogin = launchesAtLogin
         self.screensaverVignetteEnabled = screensaverVignetteEnabled
+        self.releaseBluetoothOnSleep = releaseBluetoothOnSleep
     }
 
     func displayName(forPort index: Int) -> String {
@@ -76,6 +85,11 @@ final class AppPreferences: ObservableObject {
     func setScreensaverVignetteEnabled(_ enabled: Bool) {
         screensaverVignetteEnabled = enabled
         UserDefaults.standard.set(enabled, forKey: Self.screensaverVignetteKey)
+    }
+
+    func setReleaseBluetoothOnSleep(_ enabled: Bool) {
+        releaseBluetoothOnSleep = enabled
+        UserDefaults.standard.set(enabled, forKey: Self.releaseBluetoothOnSleepKey)
     }
 
     func setLaunchesAtLogin(_ enabled: Bool) {

@@ -4,6 +4,16 @@ import XCTest
 @testable import AnkerPower
 
 final class AnkerProtocolTests: XCTestCase {
+    func testDiscoveryBackoffGrowsThenCaps() {
+        XCTAssertEqual(BluetoothDiscoveryBackoff.scanWindow, 8)
+        XCTAssertEqual(BluetoothDiscoveryBackoff.delay(afterFailureCount: 1), 5)
+        XCTAssertEqual(BluetoothDiscoveryBackoff.delay(afterFailureCount: 2), 15)
+        XCTAssertEqual(BluetoothDiscoveryBackoff.delay(afterFailureCount: 3), 30)
+        XCTAssertEqual(BluetoothDiscoveryBackoff.delay(afterFailureCount: 4), 60)
+        XCTAssertEqual(BluetoothDiscoveryBackoff.delay(afterFailureCount: 5), 120)
+        XCTAssertEqual(BluetoothDiscoveryBackoff.delay(afterFailureCount: 9), 120)
+    }
+
     func testFrameRoundTrip() throws {
         let frame = AnkerFrame(
             pattern: try Data(hex: "03000f"),

@@ -1,6 +1,18 @@
 import CoreBluetooth
 import Foundation
 
+/// Waits between discovery attempts so an absent charger does not keep the radio scanning.
+enum BluetoothDiscoveryBackoff {
+    static let scanWindow: TimeInterval = 8
+    /// First miss waits 5s, then 15s, 30s, 60s, and 2 minutes after that.
+    static let delays: [TimeInterval] = [5, 15, 30, 60, 120]
+
+    static func delay(afterFailureCount count: Int) -> TimeInterval {
+        let index = min(max(count, 1), delays.count) - 1
+        return delays[index]
+    }
+}
+
 @MainActor
 protocol ChargerBluetoothDelegate: AnyObject {
     func chargerBluetooth(_ bluetooth: ChargerBluetooth, changedState state: ChargerConnectionState)
@@ -34,7 +46,14 @@ final class ChargerBluetooth: NSObject {
     private var pendingWrites: [Data] = []
     private var awaitingWriteResponse = false
     private var userRequestedDisconnect = false
+    private var suspendedForSystemSleep = false
+    private var discoveryMissCount = 0
+    /// Callbacks for a connection we already dropped. A wake can reconnect the same
+    /// peripheral before Core Bluetooth delivers the cancel, and that callback must not
+    /// tear the new session down.
+    private var disconnectsToIgnore = 0
     private var reconnectWorkItem: DispatchWorkItem?
+    private var scanWindowWorkItem: DispatchWorkItem?
     private var connectionTimeoutWorkItem: DispatchWorkItem?
     private var handshakeTimeoutWorkItem: DispatchWorkItem?
     private var heartbeatTimer: Timer?
@@ -69,8 +88,11 @@ final class ChargerBluetooth: NSObject {
 
     func reconnect() {
         userRequestedDisconnect = false
+        suspendedForSystemSleep = false
+        discoveryMissCount = 0
         diagnostics.record("Manual reconnect requested", category: "App")
         let wasConnected = peripheral != nil
+        cancelDiscoveryTimers()
         disconnectCurrentPeripheral()
         guard central != nil else {
             start()
@@ -93,11 +115,38 @@ final class ChargerBluetooth: NSObject {
 
     func disconnect() {
         userRequestedDisconnect = true
+        suspendedForSystemSleep = false
         diagnostics.record("Disconnect requested", category: "App")
-        reconnectWorkItem?.cancel()
+        cancelDiscoveryTimers()
         central?.stopScan()
         disconnectCurrentPeripheral()
         publish(.idle)
+    }
+
+    /// Drops the link and any scan so the Mac can idle-sleep. Does not count as a user pause.
+    func suspendForSystemSleep() {
+        guard !userRequestedDisconnect else { return }
+        suspendedForSystemSleep = true
+        diagnostics.record("Releasing Bluetooth so the Mac can sleep", category: "App")
+        cancelDiscoveryTimers()
+        central?.stopScan()
+        disconnectCurrentPeripheral()
+        publish(.idle)
+    }
+
+    func resumeAfterSystemSleep() {
+        guard suspendedForSystemSleep else { return }
+        suspendedForSystemSleep = false
+        userRequestedDisconnect = false
+        discoveryMissCount = 0
+        diagnostics.record("Resuming Bluetooth after wake", category: "App")
+        if central == nil {
+            start()
+        } else if central.state == .poweredOn {
+            scan()
+        } else if central.state == .unauthorized {
+            watchAuthorization()
+        }
     }
 
     var canControlPorts: Bool {
@@ -351,19 +400,23 @@ final class ChargerBluetooth: NSObject {
     }
 
     private func scan() {
+        guard !userRequestedDisconnect, !suspendedForSystemSleep else { return }
         guard central.state == .poweredOn, peripheral == nil else { return }
         reconnectWorkItem?.cancel()
         connectionTimeoutWorkItem?.cancel()
+        scanWindowWorkItem?.cancel()
         central.stopScan()
         publish(.scanning)
         diagnostics.record("Looking for a previously used or already-connected charger")
 
-        if let value = UserDefaults.standard.string(forKey: Self.rememberedPeripheralKey),
-           let identifier = UUID(uuidString: value),
-           let remembered = central.retrievePeripherals(withIdentifiers: [identifier]).first {
-            diagnostics.record("Found remembered peripheral \(identifier.uuidString)")
+        if let remembered = rememberedPeripheral() {
+            diagnostics.record("Found remembered peripheral \(remembered.identifier.uuidString)")
             connect(remembered, source: "remembered peripheral")
             return
+        }
+
+        if UserDefaults.standard.string(forKey: Self.rememberedPeripheralKey) != nil {
+            diagnostics.record("Remembered charger is not in the Bluetooth cache; scanning briefly")
         }
 
         if let connected = central.retrieveConnectedPeripherals(withServices: [Self.service]).first {
@@ -375,13 +428,36 @@ final class ChargerBluetooth: NSObject {
         startDiscoveryScan()
     }
 
+    private func rememberedPeripheral() -> CBPeripheral? {
+        guard let value = UserDefaults.standard.string(forKey: Self.rememberedPeripheralKey),
+              let identifier = UUID(uuidString: value) else { return nil }
+        return central.retrievePeripherals(withIdentifiers: [identifier]).first
+    }
+
     private func startDiscoveryScan() {
+        guard !userRequestedDisconnect, !suspendedForSystemSleep else { return }
         guard central.state == .poweredOn, peripheral == nil else { return }
-        diagnostics.record("Starting unfiltered BLE scan (matching FF09/name locally)")
+        // Unfiltered so name-only advertisements still match. The window is short;
+        // a remembered charger uses directed connect and never reaches here.
+        diagnostics.record(
+            "Starting unfiltered BLE scan for \(Int(BluetoothDiscoveryBackoff.scanWindow))s (matching FF09/name locally)"
+        )
         central.scanForPeripherals(
             withServices: nil,
             options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
         )
+        scanWindowWorkItem?.cancel()
+        let window = DispatchWorkItem { [weak self] in
+            guard let self, self.peripheral == nil, !self.userRequestedDisconnect, !self.suspendedForSystemSleep else {
+                return
+            }
+            self.central.stopScan()
+            self.publish(.idle)
+            self.diagnostics.record("Discovery window ended without a charger")
+            self.scheduleRetry(reason: "scan window")
+        }
+        scanWindowWorkItem = window
+        DispatchQueue.main.asyncAfter(deadline: .now() + BluetoothDiscoveryBackoff.scanWindow, execute: window)
     }
 
     private func looksLikeA2687(
@@ -399,6 +475,8 @@ final class ChargerBluetooth: NSObject {
     }
 
     private func connect(_ discoveredPeripheral: CBPeripheral, source: String) {
+        scanWindowWorkItem?.cancel()
+        scanWindowWorkItem = nil
         central.stopScan()
         peripheral = discoveredPeripheral
         discoveredPeripheral.delegate = self
@@ -412,13 +490,13 @@ final class ChargerBluetooth: NSObject {
             guard let self, let discoveredPeripheral,
                   self.peripheral === discoveredPeripheral else { return }
             self.diagnostics.record(
-                "Connection attempt timed out; returning to discovery",
+                "Connection attempt timed out; retrying later",
                 level: .warning
             )
             self.peripheral = nil
-            self.central.cancelPeripheralConnection(discoveredPeripheral)
-            self.publish(.scanning)
-            self.startDiscoveryScan()
+            self.cancelAndIgnore(discoveredPeripheral)
+            self.publish(.idle)
+            self.scheduleRetry(reason: "connection timed out")
         }
         connectionTimeoutWorkItem = timeout
         DispatchQueue.main.asyncAfter(deadline: .now() + 12, execute: timeout)
@@ -438,9 +516,22 @@ final class ChargerBluetooth: NSObject {
         session.reset()
         didRequestPortHistory = false
         if let peripheral {
-            central.cancelPeripheralConnection(peripheral)
+            let dropping = peripheral
+            self.peripheral = nil
+            cancelAndIgnore(dropping)
         }
-        peripheral = nil
+    }
+
+    private func cancelAndIgnore(_ peripheral: CBPeripheral) {
+        disconnectsToIgnore += 1
+        central.cancelPeripheralConnection(peripheral)
+    }
+
+    private func consumeIgnoredDisconnect() -> Bool {
+        guard disconnectsToIgnore > 0 else { return false }
+        disconnectsToIgnore -= 1
+        diagnostics.record("Ignored a disconnect from a connection already dropped", category: "Bluetooth")
+        return true
     }
 
     private func publish(_ state: ChargerConnectionState) {
@@ -601,11 +692,29 @@ final class ChargerBluetooth: NSObject {
         }
     }
 
-    private func scheduleReconnect() {
-        guard !userRequestedDisconnect else { return }
+    private func scheduleRetry(reason: String) {
+        guard !userRequestedDisconnect, !suspendedForSystemSleep, peripheral == nil else { return }
+        discoveryMissCount += 1
+        let delay = BluetoothDiscoveryBackoff.delay(afterFailureCount: discoveryMissCount)
+        diagnostics.record(
+            "Charger not reached (\(reason)); retrying in \(Int(delay))s",
+            category: "Bluetooth"
+        )
+        reconnectWorkItem?.cancel()
+        scanWindowWorkItem?.cancel()
+        central?.stopScan()
         let workItem = DispatchWorkItem { [weak self] in self?.scan() }
         reconnectWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: workItem)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+
+    private func cancelDiscoveryTimers() {
+        reconnectWorkItem?.cancel()
+        reconnectWorkItem = nil
+        scanWindowWorkItem?.cancel()
+        scanWindowWorkItem = nil
+        connectionTimeoutWorkItem?.cancel()
+        connectionTimeoutWorkItem = nil
     }
 
     private func failAndDisconnect(_ message: String) {
@@ -613,7 +722,7 @@ final class ChargerBluetooth: NSObject {
         if let peripheral {
             central.cancelPeripheralConnection(peripheral)
         } else {
-            scheduleReconnect()
+            scheduleRetry(reason: "session failed")
         }
     }
 
@@ -690,7 +799,7 @@ extension ChargerBluetooth: @preconcurrency CBCentralManagerDelegate {
         }
         switch central.state {
         case .poweredOn:
-            if !userRequestedDisconnect { scan() }
+            if !userRequestedDisconnect, !suspendedForSystemSleep { scan() }
         case .poweredOff:
             publish(.bluetoothUnavailable("Bluetooth is off"))
         case .unauthorized:
@@ -730,6 +839,7 @@ extension ChargerBluetooth: @preconcurrency CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         connectionTimeoutWorkItem?.cancel()
+        discoveryMissCount = 0
         UserDefaults.standard.set(peripheral.identifier.uuidString, forKey: Self.rememberedPeripheralKey)
         diagnostics.record("Connected at BLE transport level", level: .success)
         publish(.discovering)
@@ -741,6 +851,8 @@ extension ChargerBluetooth: @preconcurrency CBCentralManagerDelegate {
         didFailToConnect peripheral: CBPeripheral,
         error: Error?
     ) {
+        guard central === self.central else { return }
+        if consumeIgnoredDisconnect() { return }
         guard self.peripheral === peripheral else {
             diagnostics.record("Ignored a stale connection-failure callback", category: "Bluetooth")
             return
@@ -752,13 +864,7 @@ extension ChargerBluetooth: @preconcurrency CBCentralManagerDelegate {
             level: .error
         )
         publish(.failed("Connection failed: \(error?.localizedDescription ?? "unknown error")"))
-        let retry = DispatchWorkItem { [weak self] in
-            guard let self, self.peripheral == nil else { return }
-            self.publish(.scanning)
-            self.startDiscoveryScan()
-        }
-        reconnectWorkItem = retry
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: retry)
+        scheduleRetry(reason: "connection failed")
     }
 
     func centralManager(
@@ -766,6 +872,8 @@ extension ChargerBluetooth: @preconcurrency CBCentralManagerDelegate {
         didDisconnectPeripheral peripheral: CBPeripheral,
         error: Error?
     ) {
+        guard central === self.central else { return }
+        if consumeIgnoredDisconnect() { return }
         guard self.peripheral === peripheral else {
             diagnostics.record("Ignored a stale disconnect callback", category: "Bluetooth")
             return
@@ -783,9 +891,9 @@ extension ChargerBluetooth: @preconcurrency CBCentralManagerDelegate {
             error.map { "Disconnected: \($0.localizedDescription)" } ?? "Peripheral disconnected",
             level: error == nil ? .warning : .error
         )
-        if !userRequestedDisconnect {
+        if !userRequestedDisconnect, !suspendedForSystemSleep {
             publish(.failed(error.map { "Disconnected: \($0.localizedDescription)" } ?? "Charger disconnected"))
-            scheduleReconnect()
+            scheduleRetry(reason: "disconnected")
         }
     }
 }

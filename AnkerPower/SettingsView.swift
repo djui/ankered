@@ -290,6 +290,16 @@ struct SettingsView: View {
                     set: { preferences.setIdleNotificationsEnabled($0) }
                 )
             )
+            Toggle(
+                "Release Bluetooth when this Mac sleeps",
+                isOn: Binding(
+                    get: { preferences.releaseBluetoothOnSleep },
+                    set: { preferences.setReleaseBluetoothOnSleep($0) }
+                )
+            )
+            Text("Charging history pauses until the Mac wakes.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
             ForEach(1...3, id: \.self) { index in
                 HStack {
                     Text("C\(index) name")

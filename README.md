@@ -79,7 +79,7 @@ The app appears only in the menu bar. Click the bolt icon:
 
 - **Connected** — total watts in the menu-bar title; the popover lists C1–C3
 - **Charging mode** — AI 2.0, C1 Priority, Dual Laptop, or Custom
-- **Settings** — dialog for Display, Screensaver, Custom split, and This Mac (port names, launch at login, idle notify)
+- **Settings** — dialog for Display, Screensaver, Custom split, and This Mac (port names, launch at login, idle notify, release Bluetooth on sleep)
 - **Pause** — drop the BLE session and stay in the menu bar so the official Anker app can connect; **Resume** to scan again
 - **Reconnect** — drop the current session and scan again
 - **Diagnostics** — handshake and protocol log
@@ -89,6 +89,8 @@ The app appears only in the menu bar. Click the bolt icon:
 Right-click the bolt icon for Pause/Resume, Reconnect, Settings, Charging History, Diagnostics, and Quit. Shortcuts can turn a port on or off while the app is running.
 
 If a connection fails, open Diagnostics and use **Copy All** when filing an issue.
+
+When the charger is away, the app scans in short bursts and waits longer between tries instead of scanning continuously. By default it also disconnects while the Mac sleeps, so charging history has a gap until wake. Turn off **Release Bluetooth when this Mac sleeps** in Settings to keep the session up.
 
 ## Build from source
 

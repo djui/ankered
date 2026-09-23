@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 
@@ -10,6 +11,7 @@ enum AppRuntime {
 final class AppModel: ObservableObject {
     @Published private(set) var connectionState: ChargerConnectionState = .idle
     @Published private(set) var isPaused = false
+    @Published private(set) var isSuspendedForSleep = false
     @Published private(set) var identity = ChargerIdentity()
     @Published private(set) var telemetry = ChargerTelemetry.empty
     @Published private(set) var settings = ChargerSettings.empty
@@ -29,6 +31,7 @@ final class AppModel: ObservableObject {
     private var lastLocalSettingsAt: Date?
     private var lastChargingAt: [Int: Date] = [:]
     private var idleNotifiedPorts: Set<Int> = []
+    private var sleepObservers: [any NSObjectProtocol] = []
 
     init() {
         let diagnostics = DiagnosticLog()
@@ -45,10 +48,18 @@ final class AppModel: ObservableObject {
         }
         bluetooth.delegate = self
         AppRuntime.model = self
+        observeSystemSleep()
         // Creating CBCentralManager during App.init() races the Bluetooth
         // permission sheet and can leave the central stuck at `.unauthorized`.
         DispatchQueue.main.async { [bluetooth] in
             bluetooth.start()
+        }
+    }
+
+    deinit {
+        let center = NSWorkspace.shared.notificationCenter
+        for observer in sleepObservers {
+            center.removeObserver(observer)
         }
     }
 
@@ -93,6 +104,12 @@ final class AppModel: ObservableObject {
     }
 
     var statusCaption: String {
+        if isSuspendedForSleep {
+            if identity.isEmpty {
+                return "Sleeping"
+            }
+            return "Sleeping · \(identity.displayName)"
+        }
         if isPaused {
             if identity.isEmpty {
                 return "Paused"
@@ -116,6 +133,7 @@ final class AppModel: ObservableObject {
 
     func reconnect() {
         isPaused = false
+        isSuspendedForSleep = false
         bluetooth?.reconnect()
     }
 
@@ -478,6 +496,41 @@ final class AppModel: ObservableObject {
                 label: preferences.displayName(forPort: port.index)
             )
         }
+    }
+
+    private func observeSystemSleep() {
+        let center = NSWorkspace.shared.notificationCenter
+        let willSleep = center.addObserver(
+            forName: NSWorkspace.willSleepNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.systemWillSleep()
+            }
+        }
+        let didWake = center.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.systemDidWake()
+            }
+        }
+        sleepObservers = [willSleep, didWake]
+    }
+
+    private func systemWillSleep() {
+        guard preferences.releaseBluetoothOnSleep, !isPaused, !isSuspendedForSleep else { return }
+        isSuspendedForSleep = true
+        bluetooth?.suspendForSystemSleep()
+    }
+
+    private func systemDidWake() {
+        guard isSuspendedForSleep else { return }
+        isSuspendedForSleep = false
+        bluetooth?.resumeAfterSystemSleep()
     }
 
     private func scheduleClearInFlight(_ index: Int) {
