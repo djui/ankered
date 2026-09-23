@@ -42,6 +42,7 @@ The app lives in the menu bar (`LSUIElement`). It connects locally over Bluetoot
 - Port output on/off, per-port shutdown timers, and optional port nicknames (modern AES-GCM session)
 - Rolling 24-hour Mac history, optional charger-side curve, CSV export, and a local watt-hour estimate
 - Launch at login, optional idle-port notification, and Shortcuts for port on/off
+- About panel with app version and homepage link; Diagnostics opens from Settings
 - Diagnostics window with firmware / serial / MAC in the header (Copy All still omits serials, session keys, and decrypted payloads)
 - Current Anker-app-compatible P-256 ECDH / AES-GCM handshake, with AES-CBC fallback from [Anker-BLE](https://github.com/T-REX-XP/Anker-BLE)
 
@@ -67,7 +68,7 @@ The app lives in the menu bar (`LSUIElement`). It connects locally over Bluetoot
 
 ## Install
 
-Download `AnkerPower-1.2.3.zip` from the [latest GitHub Release](https://github.com/djui/ankered/releases/latest), unzip it, and move `AnkerPower.app` to `/Applications`.
+Download `AnkerPower-1.2.4.zip` from the [latest GitHub Release](https://github.com/djui/ankered/releases/latest), unzip it, and move `AnkerPower.app` to `/Applications`.
 
 Builds are ad-hoc signed and **not notarized**. On first launch, right-click the app and choose **Open**, then confirm. After that, Spotlight and Finder open it normally.
 
@@ -79,16 +80,16 @@ The app appears only in the menu bar. Click the bolt icon:
 
 - **Connected** — total watts in the menu-bar title; the popover lists C1–C3
 - **Charging mode** — AI 2.0, C1 Priority, Dual Laptop, or Custom
-- **Settings** — dialog for Display, Screensaver, Custom split, and This Mac (port names, launch at login, idle notify, release Bluetooth on sleep)
 - **Pause** — drop the BLE session and stay in the menu bar so the official Anker app can connect; **Resume** to scan again
 - **Reconnect** — drop the current session and scan again
-- **Diagnostics** — handshake and protocol log
 - **History** — last 1 / 6 / 24 hours on this Mac, charger curve, CSV export
+- **Settings** — dialog for Display, Screensaver, Custom split, and This Mac (port names, launch at login, idle notify, release Bluetooth on sleep, Diagnostics)
+- **About** — app version and homepage link
 - **Quit**
 
-Right-click the bolt icon for Pause/Resume, Reconnect, Settings, Charging History, Diagnostics, and Quit. Shortcuts can turn a port on or off while the app is running.
+Right-click the bolt icon for Pause/Resume, Reconnect, Charging History, Settings, About, and Quit. Shortcuts can turn a port on or off while the app is running.
 
-If a connection fails, open Diagnostics and use **Copy All** when filing an issue.
+If a connection fails, open **Diagnostics…** from Settings and use **Copy All** when filing an issue.
 
 When the charger is away, the app scans in short bursts and waits longer between tries instead of scanning continuously. By default it also disconnects while the Mac sleeps, so charging history has a gap until wake. Turn off **Release Bluetooth when this Mac sleeps** in Settings to keep the session up.
 
@@ -109,7 +110,7 @@ Cut a local archive (and optionally a GitHub Release) with:
 
 ```sh
 ./scripts/release.sh            # zip only
-./scripts/release.sh --publish 1.2.3
+./scripts/release.sh --publish 1.2.4
 ```
 
 ## Privacy

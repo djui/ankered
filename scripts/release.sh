@@ -145,12 +145,14 @@ Native macOS menu-bar monitor for the Anker Prime Charger 160W (A2687).
 - Port output on/off, shutdown timers, and Shortcuts
 - Firmware, faults, device names, 24-hour history, charger curve, and CSV export
 - Launch at login and optional idle-port notification
+- About panel with app version and homepage link; Diagnostics opens from Settings
 - Native macOS app icon for Finder, Spotlight, and app listings
 - Current Anker-app handshake with AES-CBC fallback from [Anker-BLE](https://github.com/T-REX-XP/Anker-BLE)
 
-## Fixes
+## Changes
 
-- Scan in short bursts when the charger is away, and disconnect by default while the Mac sleeps so the laptop can idle. Charging history pauses until wake; turn the setting off under This Mac to keep recording
+- About shows the version number and a link to the product page
+- Diagnostics moved into Settings; History sits above Settings in the menus
 
 ## Not included
 
