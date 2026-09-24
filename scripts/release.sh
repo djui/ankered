@@ -151,8 +151,7 @@ Native macOS menu-bar monitor for the Anker Prime Charger 160W (A2687).
 
 ## Changes
 
-- About shows the version number and a link to the product page
-- Diagnostics moved into Settings; History sits above Settings in the menus
+- Stabilize sub-watt menu-bar flicker (e.g. Apple Watch ~0.5 W) with display hysteresis; history still records raw watts
 
 ## Not included
 
