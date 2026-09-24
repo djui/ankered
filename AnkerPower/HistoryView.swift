@@ -8,7 +8,11 @@ struct HistoryView: View {
     @ObservedObject private var history: HistoryStore
     @State private var range: HistoryRange = .hour
     @State private var source: HistorySource = .mac
+    @State private var selectedTimestamp: Date?
     @Environment(\.isScreenshotExport) private var isScreenshotExport
+
+    private static let maxConnectableGap: TimeInterval = 2 * 60
+    private static let seriesOrder = ["Total", "C1", "C2", "C3"]
 
     init(model: AppModel) {
         self.model = model
@@ -42,6 +46,15 @@ struct HistoryView: View {
         let timestamp: Date
         let series: String
         let power: Double
+        let segment: Int
+
+        init(id: String, timestamp: Date, series: String, power: Double, segment: Int = 0) {
+            self.id = id
+            self.timestamp = timestamp
+            self.series = series
+            self.power = power
+            self.segment = segment
+        }
     }
 
     private var visibleSamples: [PowerHistorySample] {
@@ -76,6 +89,14 @@ struct HistoryView: View {
 
     private var points: [ChartPoint] {
         source == .charger ? chargerPoints : macPoints
+    }
+
+    private var plotPoints: [ChartPoint] {
+        Self.segmented(points)
+    }
+
+    private var yDomainMax: Double {
+        max(plotPoints.map(\.power).max() ?? 0, 1)
     }
 
     var body: some View {
@@ -119,7 +140,7 @@ struct HistoryView: View {
                 }
             }
 
-            if points.isEmpty {
+            if plotPoints.isEmpty {
                 ContentUnavailableView(
                     source == .charger ? "No charger curve yet" : "No charging data yet",
                     systemImage: "chart.xyaxis.line",
@@ -131,22 +152,50 @@ struct HistoryView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                Chart(points) { point in
-                    LineMark(
-                        x: .value("Time", point.timestamp),
-                        y: .value("Power", point.power)
-                    )
-                    .foregroundStyle(by: .value("Series", point.series))
-                    .lineStyle(StrokeStyle(lineWidth: point.series == "Total" ? 2.5 : 1.25))
-                    .interpolationMethod(.catmullRom)
+                Chart {
+                    ForEach(plotPoints) { point in
+                        LineMark(
+                            x: .value("Time", point.timestamp),
+                            y: .value("Power", point.power),
+                            series: .value("Segment", "\(point.series)-\(point.segment)")
+                        )
+                        .foregroundStyle(by: .value("Series", point.series))
+                        .lineStyle(StrokeStyle(lineWidth: point.series == "Total" ? 2.5 : 1.25))
+                        .interpolationMethod(.linear)
+                    }
+
+                    if let selectedTimestamp,
+                       let nearest = nearestTimestamp(to: selectedTimestamp) {
+                        RuleMark(x: .value("Selected", nearest))
+                            .foregroundStyle(.secondary.opacity(0.5))
+                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                            .annotation(
+                                position: .top,
+                                spacing: 0,
+                                overflowResolution: .init(x: .fit(to: .chart), y: .disabled)
+                            ) {
+                                selectionCallout(at: nearest)
+                            }
+
+                        ForEach(points(at: nearest)) { point in
+                            PointMark(
+                                x: .value("Time", point.timestamp),
+                                y: .value("Power", point.power)
+                            )
+                            .foregroundStyle(by: .value("Series", point.series))
+                            .symbolSize(40)
+                        }
+                    }
                 }
                 .chartYAxisLabel("Watts")
+                .chartYScale(domain: 0...yDomainMax)
                 .chartForegroundStyleScale([
                     "Total": .yellow,
                     "C1": .blue,
                     "C2": .green,
                     "C3": .orange
                 ])
+                .chartXSelection(value: isScreenshotExport ? .constant(nil) : $selectedTimestamp)
             }
 
             HStack {
@@ -163,6 +212,31 @@ struct HistoryView: View {
         }
         .padding(20)
         .frame(minWidth: 620, minHeight: 380)
+    }
+
+    @ViewBuilder
+    private func selectionCallout(at timestamp: Date) -> some View {
+        let selected = points(at: timestamp)
+        VStack(alignment: .leading, spacing: 2) {
+            Text(formatSelectionTime(timestamp))
+                .font(.caption.weight(.semibold))
+            ForEach(selected) { point in
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(seriesColor(point.series))
+                        .frame(width: 6, height: 6)
+                    Text(point.series)
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 8)
+                    Text("\(AppModel.compactWatts(point.power)) W")
+                        .monospacedDigit()
+                }
+                .font(.caption2)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
     }
 
     private var screenshotSourceControl: some View {
@@ -195,6 +269,78 @@ struct HistoryView: View {
         .background(Color(nsColor: .separatorColor).opacity(0.35))
         .clipShape(RoundedRectangle(cornerRadius: 7))
         .accessibilityHidden(true)
+    }
+
+    private func nearestTimestamp(to selected: Date) -> Date? {
+        let timestamps = Set(points.map(\.timestamp))
+        guard let nearest = timestamps.min(by: {
+            abs($0.timeIntervalSince(selected)) < abs($1.timeIntervalSince(selected))
+        }) else {
+            return nil
+        }
+        guard abs(nearest.timeIntervalSince(selected)) <= Self.maxConnectableGap else {
+            return nil
+        }
+        return nearest
+    }
+
+    private func points(at timestamp: Date) -> [ChartPoint] {
+        let matched = points.filter { $0.timestamp == timestamp }
+        return matched.sorted {
+            seriesIndex($0.series) < seriesIndex($1.series)
+        }
+    }
+
+    private func formatSelectionTime(_ date: Date) -> String {
+        if source == .charger || range == .hour {
+            return date.formatted(.dateTime.hour().minute().second())
+        }
+        return date.formatted(.dateTime.month(.abbreviated).day().hour().minute().second())
+    }
+
+    private func seriesColor(_ series: String) -> Color {
+        switch series {
+        case "Total": return .yellow
+        case "C1": return .blue
+        case "C2": return .green
+        case "C3": return .orange
+        default: return .secondary
+        }
+    }
+
+    private func seriesIndex(_ series: String) -> Int {
+        Self.seriesOrder.firstIndex(of: series) ?? Self.seriesOrder.count
+    }
+
+    private static func segmented(_ points: [ChartPoint]) -> [ChartPoint] {
+        var result: [ChartPoint] = []
+        for seriesName in seriesOrder {
+            let seriesPoints = points
+                .filter { $0.series == seriesName }
+                .sorted { $0.timestamp < $1.timestamp }
+            var segment = 0
+            var previous: Date?
+            for point in seriesPoints {
+                if let previous, point.timestamp.timeIntervalSince(previous) > maxConnectableGap {
+                    segment += 1
+                }
+                result.append(ChartPoint(
+                    id: point.id,
+                    timestamp: point.timestamp,
+                    series: point.series,
+                    power: point.power,
+                    segment: segment
+                ))
+                previous = point.timestamp
+            }
+        }
+        // Preserve any unexpected series names not in seriesOrder.
+        let known = Set(seriesOrder)
+        let extras = points.filter { !known.contains($0.series) }
+        if !extras.isEmpty {
+            result.append(contentsOf: extras)
+        }
+        return result
     }
 
     private func exportCSV() {
