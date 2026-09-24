@@ -252,6 +252,46 @@ struct ChargerTelemetry: Equatable, Sendable {
     )
 }
 
+/// Display-only hysteresis so sub-watt noise (e.g. Apple Watch 0 ↔ 0.5 W) does not flicker the UI.
+enum PowerDisplayStabilizer {
+    static let enterWatts = 1.0
+    static let exitWatts = 0.3
+
+    static func stabilize(previous: ChargerTelemetry, incoming: ChargerTelemetry) -> ChargerTelemetry {
+        var result = incoming
+        for index in result.ports.indices {
+            let raw = incoming.ports[index]
+            let prior = previous.ports[safe: index] ?? .inactive(raw.index)
+            result.ports[index] = stabilizePort(previous: prior, incoming: raw)
+        }
+        return result
+    }
+
+    static func stabilizePort(previous: PortTelemetry, incoming: PortTelemetry) -> PortTelemetry {
+        var port = incoming
+        if incoming.power >= enterWatts {
+            port.power = incoming.power
+            port.isActive = true
+        } else if incoming.power < exitWatts {
+            port.power = 0
+            port.isActive = false
+            port.voltage = 0
+            port.current = 0
+        } else if previous.isActive {
+            port.power = previous.power
+            port.isActive = true
+            port.voltage = previous.voltage
+            port.current = previous.current
+        } else {
+            port.power = 0
+            port.isActive = false
+            port.voltage = 0
+            port.current = 0
+        }
+        return port
+    }
+}
+
 struct ChargerIdentity: Codable, Equatable, Sendable {
     var productName: String?
     var firmware: String?

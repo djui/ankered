@@ -563,9 +563,9 @@ extension AppModel: ChargerBluetoothDelegate {
     func chargerBluetooth(_ bluetooth: ChargerBluetooth, received telemetry: ChargerTelemetry) {
         var merged = telemetry
         mergeControlState(from: self.telemetry, into: &merged)
-        self.telemetry = merged
         history.append(merged)
         noteIdlePorts(in: merged)
+        self.telemetry = PowerDisplayStabilizer.stabilize(previous: self.telemetry, incoming: merged)
     }
 
     func chargerBluetooth(_ bluetooth: ChargerBluetooth, received control: PortControlUpdate) {

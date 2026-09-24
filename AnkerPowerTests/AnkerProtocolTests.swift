@@ -14,6 +14,55 @@ final class AnkerProtocolTests: XCTestCase {
         XCTAssertEqual(BluetoothDiscoveryBackoff.delay(afterFailureCount: 9), 120)
     }
 
+    func testPowerDisplayStabilizerSuppressesSubWattFlicker() {
+        var displayed = telemetry(port1Power: 0)
+        for raw in [0.0, 0.5, 0.0, 0.5, 0.4, 0.0] {
+            displayed = PowerDisplayStabilizer.stabilize(
+                previous: displayed,
+                incoming: telemetry(port1Power: raw, voltage: 5, current: 0.1)
+            )
+            XCTAssertEqual(displayed.ports[0].power, 0, accuracy: 0.001)
+            XCTAssertFalse(displayed.ports[0].isActive)
+            XCTAssertEqual(displayed.ports[0].voltage, 0, accuracy: 0.001)
+            XCTAssertEqual(displayed.ports[0].current, 0, accuracy: 0.001)
+            XCTAssertEqual(displayed.totalPower, 0, accuracy: 0.001)
+        }
+    }
+
+    func testPowerDisplayStabilizerEntersOnOneWatt() {
+        let displayed = PowerDisplayStabilizer.stabilize(
+            previous: telemetry(port1Power: 0),
+            incoming: telemetry(port1Power: 15, voltage: 9, current: 1.67, isActive: true)
+        )
+        XCTAssertEqual(displayed.ports[0].power, 15, accuracy: 0.001)
+        XCTAssertTrue(displayed.ports[0].isActive)
+        XCTAssertEqual(displayed.ports[0].voltage, 9, accuracy: 0.001)
+        XCTAssertEqual(displayed.ports[0].current, 1.67, accuracy: 0.001)
+    }
+
+    func testPowerDisplayStabilizerHoldsThenExits() {
+        var displayed = PowerDisplayStabilizer.stabilize(
+            previous: telemetry(port1Power: 0),
+            incoming: telemetry(port1Power: 15, voltage: 9, current: 1.67, isActive: true)
+        )
+        displayed = PowerDisplayStabilizer.stabilize(
+            previous: displayed,
+            incoming: telemetry(port1Power: 0.5, voltage: 5, current: 0.1, isActive: true)
+        )
+        XCTAssertEqual(displayed.ports[0].power, 15, accuracy: 0.001)
+        XCTAssertTrue(displayed.ports[0].isActive)
+        XCTAssertEqual(displayed.ports[0].voltage, 9, accuracy: 0.001)
+
+        displayed = PowerDisplayStabilizer.stabilize(
+            previous: displayed,
+            incoming: telemetry(port1Power: 0.2, voltage: 5, current: 0.04, isActive: true)
+        )
+        XCTAssertEqual(displayed.ports[0].power, 0, accuracy: 0.001)
+        XCTAssertFalse(displayed.ports[0].isActive)
+        XCTAssertEqual(displayed.ports[0].voltage, 0, accuracy: 0.001)
+        XCTAssertEqual(displayed.ports[0].current, 0, accuracy: 0.001)
+    }
+
     func testFrameRoundTrip() throws {
         let frame = AnkerFrame(
             pattern: try Data(hex: "03000f"),
@@ -694,6 +743,29 @@ final class AnkerProtocolTests: XCTestCase {
             authenticatedData: ready.aad
         )
         XCTAssertEqual(try AnkerTLV.parse(historyPlain)[0xA2], Data([0x01, 0x00]))
+    }
+
+    private func telemetry(
+        port1Power: Double,
+        voltage: Double = 0,
+        current: Double = 0,
+        isActive: Bool? = nil
+    ) -> ChargerTelemetry {
+        let active = isActive ?? (port1Power > 0.05)
+        return ChargerTelemetry(
+            ports: [
+                PortTelemetry(
+                    index: 1,
+                    isActive: active,
+                    voltage: voltage,
+                    current: current,
+                    power: port1Power
+                ),
+                .inactive(2),
+                .inactive(3)
+            ],
+            receivedAt: Date()
+        )
     }
 
     private func completeModernHandshake() throws -> (
