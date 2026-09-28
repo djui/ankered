@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Anker Power — Your Anker Prime 160W, in the Mac menu bar</title>
-  <meta name="description" content="Unofficial native macOS menu-bar monitor for the Anker Prime Charger 160W (A2687). Live local BLE power, per-port control, and charger settings — no cloud, no Anker account.">
+  <meta name="description" content="Unofficial native macOS menu-bar monitor for the Anker Prime Charger 160W (A2687). Live local BLE power, per-port control, 24-hour history, and charger settings — no cloud, no Anker account.">
   <link rel="icon" href="assets/favicon.png" type="image/png">
   <link rel="apple-touch-icon" href="assets/icon.png">
   <meta name="theme-color" content="#0b0d12">
@@ -57,6 +57,11 @@
             <span class="watt-value" data-count="28">0</span><span class="watt-unit">W</span>
           </p>
           <p class="watt-caption">Total output</p>
+          <div class="share-bar" role="img" aria-label="28 of 160 watts in use, all on C1">
+            <span class="c1" style="--share: 28"></span>
+            <span class="rest" style="--share: 132"></span>
+          </div>
+          <p class="watt-caption share-caption">of 160 W</p>
         </div>
         <div class="port-chips">
           <div class="port-chip">
@@ -79,8 +84,8 @@
           <img src="screenshots/menubar.png" alt="macOS menu bar with Anker Power showing live watts">
         </figure>
         <figure class="window window-hero window-bare">
-          <button type="button" class="shot-btn" data-lightbox="screenshots/menu.png" data-caption="Menu bar popover">
-            <img src="screenshots/menu.png" alt="Menu bar popover showing 28 W total output, C1 at 28 W, and live volts and amps">
+          <button type="button" class="shot-btn" data-lightbox="screenshots/menu-dark.png" data-caption="Menu bar popover">
+            <img src="screenshots/menu-dark.png" alt="Menu bar popover: connection status and firmware at the top, 84 W total output with a per-port bar against 160 W, and C1 to C3 with live watts, volts, and amps">
           </button>
         </figure>
       </div>
@@ -88,27 +93,27 @@
 
     <section class="proof" id="gallery" aria-label="App screenshots">
       <div class="proof-grid">
-        <button type="button" class="proof-card" data-reveal data-lightbox="screenshots/menu.png" data-caption="Live menu bar popover">
+        <button type="button" class="proof-card" data-reveal data-lightbox="screenshots/menu-dark.png" data-caption="Status, total output, and every port in one popover">
           <figure class="window window-bare">
-            <img src="screenshots/menu.png" alt="Menu bar popover">
+            <img src="screenshots/menu-dark.png" alt="Menu bar popover">
           </figure>
           <span>Live watts</span>
         </button>
-        <button type="button" class="proof-card" data-reveal data-lightbox="screenshots/settings.png" data-caption="Display, custom split, Mac preferences, and Diagnostics">
+        <button type="button" class="proof-card" data-reveal data-lightbox="screenshots/settings-dark.png" data-caption="Display, custom split, screensaver, port names, and Mac preferences">
           <figure class="window window-bare">
-            <img src="screenshots/settings.png" alt="Settings dialog">
+            <img src="screenshots/settings-dark.png" alt="Settings window">
           </figure>
           <span>Modes &amp; display</span>
         </button>
-        <button type="button" class="proof-card" data-reveal data-lightbox="screenshots/history.png" data-caption="Charging history chart">
+        <button type="button" class="proof-card" data-reveal data-lightbox="screenshots/history-dark.png" data-caption="Charging history with peak, average, energy, and charging time">
           <figure class="window window-bare">
-            <img src="screenshots/history.png" alt="Charging history window">
+            <img src="screenshots/history-dark.png" alt="Charging history window">
           </figure>
           <span>24-hour history</span>
         </button>
-        <button type="button" class="proof-card" data-reveal data-lightbox="screenshots/diagnostics.png" data-caption="Connection diagnostics">
+        <button type="button" class="proof-card" data-reveal data-lightbox="screenshots/diagnostics-dark.png" data-caption="Connection diagnostics">
           <figure class="window window-bare">
-            <img src="screenshots/diagnostics.png" alt="Connection diagnostics window">
+            <img src="screenshots/diagnostics-dark.png" alt="Connection diagnostics window">
           </figure>
           <span>Local diagnostics</span>
         </button>
@@ -117,26 +122,30 @@
 
     <section class="feature split" id="features">
       <figure class="window window-bare" data-reveal>
-        <button type="button" class="shot-btn" data-lightbox="screenshots/menu.png" data-caption="Per-port live power">
-          <img src="screenshots/menu.png" alt="Per-port power, cable rating, Apple PD Fast Charging, and connected device">
+        <button type="button" class="shot-btn" data-lightbox="screenshots/menu-dark.png" data-caption="Per-port live power">
+          <img src="screenshots/menu-dark.png" alt="Per-port power, charging protocol, connected device, and cable rating">
         </button>
       </figure>
       <div class="feature-copy" data-reveal>
         <p class="eyebrow">Live monitoring</p>
         <h2>Every port, at a glance.</h2>
-        <p>Click the bolt in the menu bar. Total watts stay in the status item while you work. The popover lists C1–C3 with live watts, volts, and amps.</p>
+        <p>Total watts stay in the menu bar while you work. Click the bolt and the popover leads with the charger&rsquo;s status, then total output against the 160 W limit — split by port — and C1–C3 with live watts, volts, and amps.</p>
         <ul class="feature-list">
+          <li>
+            <strong>Status up top</strong>
+            Connected, searching, or paused, with firmware, Pause, and Reconnect right beside it. When Bluetooth is off or access is missing, the popover says so and opens the right System Settings pane.
+          </li>
           <li>
             <strong>Cable &amp; profile</strong>
             E-Marker ratings, PD Fast Charging, and connected device names from a local USB VID/PID table.
           </li>
           <li>
-            <strong>Port nicknames</strong>
-            Label C1 as MacBook, C2 as iPhone — stored only on this Mac.
+            <strong>Port names</strong>
+            Label C1 as MacBook, C2 as iPhone — saved as you type, stored only on this Mac.
           </li>
           <li>
             <strong>Shutdown timers</strong>
-            1h / 2h / 3h presets or a custom countdown, plus output on/off with a confirm step.
+            1h / 2h / 3h presets or a custom countdown, plus output on/off with a confirmation.
           </li>
         </ul>
       </div>
@@ -167,11 +176,11 @@
             <strong>20 W</strong>
           </div>
         </div>
-        <p class="split-note">Each port 0 or 15–140 W, 160 W total. Display brightness, timeout, language, rotation, screensaver slots, and Diagnostics live in Settings.</p>
+        <p class="split-note">Each port gets 0 W or 15–140 W, up to 160 W in total. Settings previews the split before you apply it, next to display brightness, timeout, language, rotation, and four screensaver slots.</p>
       </div>
       <figure class="window window-bare" data-reveal>
-        <button type="button" class="shot-btn" data-lightbox="screenshots/settings.png" data-caption="Display settings, custom watt split, and Diagnostics">
-          <img src="screenshots/settings.png" alt="Settings with brightness, timeout, language, custom watt split, port nicknames, and Diagnostics">
+        <button type="button" class="shot-btn" data-lightbox="screenshots/settings-dark.png" data-caption="Display settings, custom watt split, screensaver, and port names">
+          <img src="screenshots/settings-dark.png" alt="Settings with brightness, timeout, language, custom watt split, screensaver slots, port names, and Mac preferences">
         </button>
       </figure>
     </section>
@@ -180,16 +189,17 @@
       <div class="history-intro" data-reveal>
         <p class="eyebrow">Energy</p>
         <h2>See the last 24 hours on this Mac.</h2>
-        <p>Rolling local samples, an optional charger-side curve, a watt-hour estimate, and CSV export. Yellow total, blue C1, green C2, orange C3.</p>
+        <p>Readings stay on this Mac for 24 hours — full resolution for the last hour, 30-second averages before that. Peak, average, energy, and charging time sit above the chart; switch to the charger&rsquo;s own curve or export CSV. White total, blue C1, orange C2, green C3.</p>
         <ul class="callouts">
           <li>1 hour · 6 hours · 24 hours</li>
+          <li>Peak · average · energy · charging time</li>
           <li>This Mac or charger curve</li>
           <li>Export CSV · stays local</li>
         </ul>
       </div>
       <figure class="window window-wide window-bare" data-reveal>
-        <button type="button" class="shot-btn" data-lightbox="screenshots/history.png" data-caption="Charging history">
-          <img src="screenshots/history.png" alt="Charging history chart with total, C1, C2, and C3 series over six hours">
+        <button type="button" class="shot-btn" data-lightbox="screenshots/history-dark.png" data-caption="Charging history">
+          <img src="screenshots/history-dark.png" alt="Charging history with peak, average, energy, and charging-time tiles above a chart of total, C1, C2, and C3 over the last hour">
         </button>
       </figure>
     </section>
@@ -199,7 +209,7 @@
         <article class="glass-card" data-reveal>
           <p class="eyebrow">Privacy</p>
           <h2>Stays on this Mac.</h2>
-          <p>All charger telemetry and history stay on-device. Up to 24 hours of samples and last-known charger identity live in Application Support. Port nicknames live in UserDefaults. The app makes no network requests.</p>
+          <p>All charger telemetry and history stay on-device. Up to 24 hours of readings and the last-known charger identity live in Application Support. Port names live in UserDefaults. The app makes no network requests.</p>
           <ul class="feature-list">
             <li><strong>No Anker account</strong> and no cloud protocol management.</li>
             <li><strong>Diagnostics Copy All</strong> omits serials, session keys, and decrypted payloads.</li>
@@ -217,8 +227,8 @@
         </article>
       </div>
       <figure class="window window-wide window-bare" data-reveal>
-        <button type="button" class="shot-btn" data-lightbox="screenshots/diagnostics.png" data-caption="Privacy-aware diagnostics log">
-          <img src="screenshots/diagnostics.png" alt="Diagnostics log of the local BLE handshake with payloads omitted">
+        <button type="button" class="shot-btn" data-lightbox="screenshots/diagnostics-dark.png" data-caption="Privacy-aware diagnostics log">
+          <img src="screenshots/diagnostics-dark.png" alt="Diagnostics log of the local BLE handshake with payloads omitted">
         </button>
       </figure>
     </section>
