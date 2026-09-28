@@ -141,6 +141,7 @@ Native macOS menu-bar monitor for the Anker Prime Charger 160W (A2687).
 ## Included
 
 - Live total and per-port power, voltage, and current over local Bluetooth LE
+- Menu-bar icon with a bar per port next to the total watts
 - Connection status, firmware, Pause, and Reconnect at the top of the popover
 - Charging-mode picker and display settings (brightness, timeout, rotation, language)
 - Port output on/off, shutdown timers, and Shortcuts
@@ -152,8 +153,8 @@ Native macOS menu-bar monitor for the Anker Prime Charger 160W (A2687).
 
 ## Changes
 
-- Idle CPU use drops from about 18% to about 2%: the closed popover no longer animates in the background, and readings that change nothing on screen no longer redraw the menu bar item
-- The History chart stays light with a full 24 hours of data, drawing each line with at most 360 points
+- The menu-bar icon shows a bar per port, C1 to C3: it steps up at 15, 45, and 90 W, a solid stub marks a device that is plugged in but not charging, and a faint stub an empty port
+- Without a charger the icon shows faint bars, slashed when Bluetooth is off, access is missing, or the connection is paused
 
 ## Not included
 
