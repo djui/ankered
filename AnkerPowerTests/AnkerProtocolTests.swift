@@ -63,6 +63,117 @@ final class AnkerProtocolTests: XCTestCase {
         XCTAssertEqual(displayed.ports[0].current, 0, accuracy: 0.001)
     }
 
+    func testDisplayNameIgnoresStateWordsInTheProductField() {
+        // Seen on A2687 firmware 0.0.5.2: the handshake's A2 field says "Charging".
+        XCTAssertEqual(ChargerIdentity(productName: "Charging", firmware: "0.0.5.2").displayName, "Anker Prime 160W")
+        XCTAssertEqual(ChargerIdentity(productName: nil).displayName, "Anker Prime 160W")
+        XCTAssertEqual(ChargerIdentity(productName: "").displayName, "Anker Prime 160W")
+        XCTAssertEqual(
+            ChargerIdentity(productName: "Anker Prime Charger (160W)").displayName,
+            "Anker Prime Charger (160W)"
+        )
+        XCTAssertEqual(ChargerIdentity(productName: "A2687").displayName, "A2687")
+    }
+
+    func testConnectionStatusDescribesEachState() {
+        let identity = ChargerIdentity(productName: "Charging", firmware: "0.0.5.2")
+        func status(
+            _ state: ChargerConnectionState,
+            paused: Bool = false,
+            sleeping: Bool = false
+        ) -> ConnectionStatus {
+            ConnectionStatus.make(state: state, isPaused: paused, isSuspendedForSleep: sleeping, identity: identity)
+        }
+
+        let connected = status(.connected)
+        XCTAssertEqual(connected.caption, "Connected · v0.0.5.2")
+        XCTAssertEqual(connected.tone, .live)
+        XCTAssertNil(connected.action)
+
+        XCTAssertEqual(status(.idle, paused: true).action, .resume)
+        XCTAssertEqual(status(.connected, sleeping: true).title, "Paused while this Mac sleeps")
+        XCTAssertTrue(status(.scanning).isWorking)
+        XCTAssertEqual(status(.bluetoothUnavailable(.poweredOff)).action, .openBluetoothSettings)
+        XCTAssertEqual(status(.bluetoothUnavailable(.unauthorized)).action, .openPrivacySettings)
+        XCTAssertNil(status(.bluetoothUnavailable(.resetting)).action)
+
+        let failed = status(.failed("Charger disconnected"))
+        XCTAssertEqual(failed.action, .reconnect)
+        XCTAssertEqual(failed.message, "Charger disconnected. Anker Power keeps retrying in the background.")
+        XCTAssertEqual(
+            status(.failed("Connection failed: The operation timed out.")).message,
+            "Connection failed: The operation timed out. Anker Power keeps retrying in the background."
+        )
+    }
+
+    @MainActor
+    func testHistoryCompactionKeepsTheRecentHourAndTheEnergy() {
+        let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        let samples = stride(from: 3 * 3_600.0, through: 0, by: -3).map { secondsAgo in
+            PowerHistorySample(
+                timestamp: now.addingTimeInterval(-secondsAgo),
+                port1: 40 + 20 * sin(secondsAgo / 600),
+                port2: 12,
+                port3: 0
+            )
+        }
+        let store = HistoryStore(persist: false, samples: samples)
+        let before = store.summary(since: .distantPast)
+
+        store.compact(now: now)
+
+        let cutoff = now.addingTimeInterval(-HistoryStore.fullResolutionWindow)
+        let recentBefore = samples.filter { $0.timestamp >= cutoff }
+        let recentAfter = store.samples.filter { $0.timestamp >= cutoff }
+        XCTAssertEqual(recentAfter, recentBefore, "the last hour keeps full resolution")
+        XCTAssertLessThan(store.samples.count, samples.count / 2)
+        XCTAssertEqual(store.samples.first!.timestamp.timeIntervalSince(samples.first!.timestamp), 0, accuracy: 30)
+
+        let after = store.summary(since: .distantPast)
+        XCTAssertEqual(after.energyWh, before.energyWh, accuracy: before.energyWh * 0.005)
+        XCTAssertEqual(after.averageWatts, before.averageWatts, accuracy: 0.5)
+
+        let compacted = store.samples
+        store.compact(now: now)
+        XCTAssertEqual(store.samples, compacted, "a second pass must not re-average buckets")
+    }
+
+    func testHistorySampleReadsOlderFilesAndWritesCompactly() throws {
+        let legacy = Data("""
+        [{"id":"2F1B5E5C-6C8E-4C58-9E43-0B8E3C1A7D10","timestamp":812215781.9,"port1":58.200000000000003,"port2":0,"port3":0.5}]
+        """.utf8)
+        let decoded = try JSONDecoder().decode([PowerHistorySample].self, from: legacy)
+        XCTAssertEqual(decoded.count, 1)
+        XCTAssertEqual(decoded[0].id.uuidString, "2F1B5E5C-6C8E-4C58-9E43-0B8E3C1A7D10")
+        XCTAssertEqual(decoded[0].total, 58.7, accuracy: 0.001)
+
+        let encoded = try XCTUnwrap(String(data: JSONEncoder().encode(decoded), encoding: .utf8))
+        XCTAssertFalse(encoded.contains("\"id\""))
+        XCTAssertTrue(encoded.contains("\"port1\":58.2"))
+
+        let reread = try JSONDecoder().decode([PowerHistorySample].self, from: Data(encoded.utf8))
+        XCTAssertEqual(reread[0].timestamp, decoded[0].timestamp)
+        XCTAssertEqual(reread[0].port1, 58.2, accuracy: 0.001)
+    }
+
+    func testHistorySummaryIntegratesOverTimeAndSkipsGaps() {
+        let start = Date(timeIntervalSinceReferenceDate: 0)
+        let readings: [(timestamp: Date, watts: Double)] = [
+            (start, 60),
+            (start.addingTimeInterval(30), 60),
+            (start.addingTimeInterval(60), 60),
+            // Ten-minute gap: the Mac slept, so it counts toward nothing.
+            (start.addingTimeInterval(660), 0.5),
+            (start.addingTimeInterval(690), 0.5)
+        ]
+        let summary = HistorySummary.compute(readings)
+        XCTAssertEqual(summary.peakWatts, 60)
+        XCTAssertEqual(summary.energyWh, (60 * 60 + 0.5 * 30) / 3_600, accuracy: 0.0001)
+        XCTAssertEqual(summary.chargingDuration, 60)
+        XCTAssertEqual(summary.averageWatts, (60 * 60 + 0.5 * 30) / 90, accuracy: 0.0001)
+        XCTAssertEqual(HistorySummary.compute([]), .empty)
+    }
+
     func testFrameRoundTrip() throws {
         let frame = AnkerFrame(
             pattern: try Data(hex: "03000f"),

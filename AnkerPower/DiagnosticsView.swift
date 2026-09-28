@@ -57,6 +57,11 @@ struct DiagnosticsView: View {
 
     private var identitySummary: String {
         var parts: [String] = []
+        // The raw A2 value, which the menu only shows when it looks like a product name.
+        if let reported = model.identity.productName, !reported.isEmpty,
+           reported != model.identity.displayName {
+            parts.append("Reported name “\(reported)”")
+        }
         if let firmware = model.identity.firmwareLabel {
             parts.append("Firmware \(firmware)")
         }
@@ -83,7 +88,7 @@ struct DiagnosticsView: View {
                     Text(entry.message)
                         .textSelection(.enabled)
                 }
-                .font(.system(.caption, design: .default))
+                .font(.system(.caption, design: .monospaced))
                 .id(entry.id)
             }
         }

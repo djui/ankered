@@ -238,6 +238,9 @@ struct ChargerPortHistory: Equatable, Sendable {
 }
 
 struct ChargerTelemetry: Equatable, Sendable {
+    /// Combined output limit of the A2687 across all three ports.
+    static let capacityWatts = 160.0
+
     var ports: [PortTelemetry]
     var receivedAt: Date
     var chargingMode: ChargerChargingMode? = nil
@@ -293,14 +296,23 @@ enum PowerDisplayStabilizer {
 }
 
 struct ChargerIdentity: Codable, Equatable, Sendable {
+    static let modelName = "Anker Prime 160W"
+
     var productName: String?
     var firmware: String?
     var serialNumber: String?
     var macAddress: String?
 
+    /// The handshake's A2 field is not always a product name: some A2687 firmware reports
+    /// a state word such as "Charging" there. Only trust it when it names the product.
     var displayName: String {
-        guard let productName, !productName.isEmpty else { return "Anker Prime 160W" }
+        guard let productName, Self.looksLikeProductName(productName) else { return Self.modelName }
         return productName
+    }
+
+    static func looksLikeProductName(_ name: String) -> Bool {
+        let lowered = name.lowercased()
+        return ["anker", "prime", "a2687"].contains { lowered.contains($0) }
     }
 
     var firmwareLabel: String? {
@@ -322,8 +334,28 @@ struct ChargerIdentity: Codable, Equatable, Sendable {
     }
 }
 
+enum BluetoothIssue: Equatable, Sendable {
+    case poweredOff
+    case unauthorized
+    case unsupported
+    case resetting
+    case checking
+    case unavailable
+
+    var label: String {
+        switch self {
+        case .poweredOff: return "Bluetooth is off"
+        case .unauthorized: return "Bluetooth permission is required"
+        case .unsupported: return "Bluetooth LE is unavailable"
+        case .resetting: return "Bluetooth is resetting…"
+        case .checking: return "Checking Bluetooth…"
+        case .unavailable: return "Bluetooth is unavailable"
+        }
+    }
+}
+
 enum ChargerConnectionState: Equatable, Sendable {
-    case bluetoothUnavailable(String)
+    case bluetoothUnavailable(BluetoothIssue)
     case idle
     case scanning
     case connecting
@@ -334,7 +366,7 @@ enum ChargerConnectionState: Equatable, Sendable {
 
     var label: String {
         switch self {
-        case .bluetoothUnavailable(let reason): return reason
+        case .bluetoothUnavailable(let issue): return issue.label
         case .idle: return "Disconnected"
         case .scanning: return "Looking for Anker Prime 160W…"
         case .connecting: return "Connecting…"
@@ -359,6 +391,157 @@ enum ChargerConnectionState: Equatable, Sendable {
     }
 }
 
+/// What the popover says about the Bluetooth session: a short header caption plus,
+/// while there is no live data, a headline, an explanation, and the one action that helps.
+struct ConnectionStatus: Equatable, Sendable {
+    enum Tone: Equatable, Sendable {
+        case live
+        case pending
+        case neutral
+        case warning
+        case critical
+    }
+
+    enum Action: Equatable, Sendable {
+        case resume
+        case reconnect
+        case openBluetoothSettings
+        case openPrivacySettings
+
+        var title: String {
+            switch self {
+            case .resume: return "Resume"
+            case .reconnect: return "Reconnect"
+            case .openBluetoothSettings: return "Open Bluetooth Settings"
+            case .openPrivacySettings: return "Open Privacy Settings"
+            }
+        }
+    }
+
+    var title: String
+    var detail: String? = nil
+    var symbol: String
+    var tone: Tone
+    var isWorking = false
+    var headline: String
+    var message: String
+    var action: Action? = nil
+
+    var caption: String {
+        [title, detail].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    static func make(
+        state: ChargerConnectionState,
+        isPaused: Bool,
+        isSuspendedForSleep: Bool,
+        identity: ChargerIdentity
+    ) -> ConnectionStatus {
+        if isSuspendedForSleep {
+            return ConnectionStatus(
+                title: "Paused while this Mac sleeps",
+                symbol: "moon.fill",
+                tone: .neutral,
+                headline: "Paused while this Mac sleeps",
+                message: "Anker Power reconnects when the Mac wakes."
+            )
+        }
+        if isPaused {
+            return ConnectionStatus(
+                title: "Paused",
+                symbol: "pause.fill",
+                tone: .neutral,
+                headline: "Connection paused",
+                message: "The charger is free for the Anker app. Resume to see live power again.",
+                action: .resume
+            )
+        }
+        switch state {
+        case .connected:
+            return ConnectionStatus(
+                title: "Connected",
+                detail: identity.firmwareLabel,
+                symbol: "bolt.fill",
+                tone: .live,
+                headline: "Connected",
+                message: ""
+            )
+        case .scanning:
+            return ConnectionStatus(
+                title: "Searching…",
+                symbol: "antenna.radiowaves.left.and.right",
+                tone: .pending,
+                isWorking: true,
+                headline: "Looking for your charger",
+                message: "Keep it powered and nearby, and disconnect it in the Anker app on your phone."
+            )
+        case .connecting, .discovering:
+            return ConnectionStatus(
+                title: "Connecting…",
+                symbol: "antenna.radiowaves.left.and.right",
+                tone: .pending,
+                isWorking: true,
+                headline: "Connecting to your charger",
+                message: "This usually takes a few seconds."
+            )
+        case .negotiating:
+            return ConnectionStatus(
+                title: "Securing connection…",
+                symbol: "lock.fill",
+                tone: .pending,
+                isWorking: true,
+                headline: "Starting a secure session",
+                message: "This usually takes a few seconds."
+            )
+        case .failed(let reason):
+            let sentence = reason.hasSuffix(".") ? reason : "\(reason)."
+            return ConnectionStatus(
+                title: "Connection lost",
+                symbol: "exclamationmark",
+                tone: .warning,
+                headline: "Charger not reachable",
+                message: "\(sentence) Anker Power keeps retrying in the background.",
+                action: .reconnect
+            )
+        case .bluetoothUnavailable(.poweredOff):
+            return ConnectionStatus(
+                title: "Bluetooth is off",
+                symbol: "bolt.slash.fill",
+                tone: .critical,
+                headline: "Bluetooth is off",
+                message: "Turn on Bluetooth to see live charging power.",
+                action: .openBluetoothSettings
+            )
+        case .bluetoothUnavailable(.unauthorized):
+            return ConnectionStatus(
+                title: "Bluetooth access needed",
+                symbol: "hand.raised.fill",
+                tone: .critical,
+                headline: "Bluetooth access needed",
+                message: "Allow Anker Power under Privacy & Security › Bluetooth.",
+                action: .openPrivacySettings
+            )
+        case .bluetoothUnavailable(let issue):
+            return ConnectionStatus(
+                title: issue.label,
+                symbol: "bolt.slash.fill",
+                tone: .warning,
+                headline: issue.label,
+                message: "Anker Power connects as soon as Bluetooth is available."
+            )
+        case .idle:
+            return ConnectionStatus(
+                title: "Not connected",
+                symbol: "bolt.slash.fill",
+                tone: .neutral,
+                headline: "Not connected",
+                message: "Connect to see live charging power.",
+                action: .reconnect
+            )
+        }
+    }
+}
+
 struct PowerHistorySample: Codable, Identifiable, Equatable, Sendable {
     var id: UUID
     var timestamp: Date
@@ -374,7 +557,42 @@ struct PowerHistorySample: Codable, Identifiable, Equatable, Sendable {
         self.port3 = ports[safe: 2]?.power ?? 0
     }
 
+    init(id: UUID = UUID(), timestamp: Date, port1: Double, port2: Double, port3: Double) {
+        self.id = id
+        self.timestamp = timestamp
+        self.port1 = port1
+        self.port2 = port2
+        self.port3 = port3
+    }
+
     var total: Double { port1 + port2 + port3 }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, timestamp, port1, port2, port3
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // Older history files carry a per-sample UUID; it is only a view identity.
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        timestamp = try container.decode(Date.self, forKey: .timestamp)
+        port1 = try container.decode(Double.self, forKey: .port1)
+        port2 = try container.decode(Double.self, forKey: .port2)
+        port3 = try container.decode(Double.self, forKey: .port3)
+    }
+
+    /// Stores centiwatt precision and no UUID, which keeps the file about half the size.
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(timestamp, forKey: .timestamp)
+        try container.encode(Self.centiwatts(port1), forKey: .port1)
+        try container.encode(Self.centiwatts(port2), forKey: .port2)
+        try container.encode(Self.centiwatts(port3), forKey: .port3)
+    }
+
+    private static func centiwatts(_ watts: Double) -> Double {
+        (watts * 100).rounded() / 100
+    }
 }
 
 extension Collection {

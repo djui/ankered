@@ -36,7 +36,10 @@ if [[ ! -d "$APP" ]]; then
   exit 1
 fi
 
-"$APP/Contents/MacOS/AnkerPower" --export-screenshots "$DEST"
+# Pass --all-states as a second argument to also render every popover state for review.
+"$APP/Contents/MacOS/AnkerPower" --export-screenshots "$DEST" "${@:2}"
 
 echo "Wrote screenshots to $DEST"
-ls -l "$DEST"/menu.png "$DEST"/settings.png "$DEST"/history.png "$DEST"/diagnostics.png "$DEST"/screensaver.png
+for name in menu settings history diagnostics screensaver; do
+  ls -l "$DEST/$name.png" "$DEST/$name-dark.png"
+done

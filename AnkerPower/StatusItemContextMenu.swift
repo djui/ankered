@@ -140,7 +140,7 @@ final class StatusItemContextMenu: NSObject {
 
         menu.addItem(.separator())
 
-        let settingsItem = NSMenuItem(title: "Settings", action: #selector(openSettings), keyEquivalent: "")
+        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: "")
         settingsItem.target = self
         menu.addItem(settingsItem)
 
@@ -148,7 +148,7 @@ final class StatusItemContextMenu: NSObject {
         aboutItem.target = self
         menu.addItem(aboutItem)
 
-        let quitItem = NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "")
+        let quitItem = NSMenuItem(title: "Quit Anker Power", action: #selector(quitApp), keyEquivalent: "")
         quitItem.target = self
         menu.addItem(quitItem)
 

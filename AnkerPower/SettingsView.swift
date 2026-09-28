@@ -3,6 +3,10 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct SettingsView: View {
+    static let width: CGFloat = 720
+    /// Four slots fill the right column's 306 pt row with 8 pt gaps.
+    private static let thumbnailSize: CGFloat = 70
+
     @ObservedObject var model: AppModel
     @ObservedObject private var preferences: AppPreferences
     @ObservedObject private var screensaverStore: ScreensaverStore
@@ -31,23 +35,30 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 28) {
-            VStack(alignment: .leading, spacing: 16) {
-                displaySection
-                Divider()
-                customSection
+        VStack(alignment: .leading, spacing: 18) {
+            if !model.canControlPorts {
+                offlineBanner
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(alignment: .top, spacing: 20) {
+                VStack(alignment: .leading, spacing: 18) {
+                    displaySection
+                    customSection
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-            VStack(alignment: .leading, spacing: 16) {
-                screensaverSection
-                Divider()
-                macSection
+                VStack(alignment: .leading, spacing: 18) {
+                    screensaverSection
+                    portNamesSection
+                    macSection
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(20)
-        .frame(width: 680, alignment: .topLeading)
+        .frame(width: Self.width, alignment: .topLeading)
+        // Report the full content height as the minimum, so the window (sized to its content)
+        // cannot open shorter and squeeze thumbnails and wrapped subtitles.
+        .fixedSize(horizontal: false, vertical: true)
         .onAppear {
             customC1 = Int(model.settings.customSplit?.c1 ?? 0)
             customC2 = Int(model.settings.customSplit?.c2 ?? 0)
@@ -58,77 +69,204 @@ struct SettingsView: View {
         }
     }
 
-    private var displaySection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionTitle("Display")
-            HStack {
-                Text("Brightness")
-                Spacer()
-                Text("\(model.settings.brightnessPercent ?? 80)%")
+    // MARK: Connection
+
+    private var offlineBanner: some View {
+        let status = model.connectionStatus
+        // Connected but without control means the charger only answered the older AES-CBC session.
+        let isLegacySession = model.connectionState.isConnected
+        let action: ConnectionStatus.Action? = isLegacySession ? .reconnect : status.action
+        return HStack(spacing: 10) {
+            ConnectionBadge(status: status)
+                .scaleEffect(0.8)
+                .frame(width: 24, height: 24)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Charger settings are read-only right now")
+                    .font(.headline)
+                Text(isLegacySession
+                     ? "The charger answered only its older Bluetooth session, which cannot change settings. Reconnect to try again."
+                     : "\(status.title). Display, split, and screensaver changes need a live connection.")
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .monospacedDigit()
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Slider(
-                value: Binding(
-                    get: { Double(model.settings.brightnessPercent ?? 80) },
-                    set: { model.setScreenBrightness(Int($0.rounded())) }
-                ),
-                in: 25...100,
-                step: 5
-            )
-            .disabled(!model.canControlPorts)
-
-            labeledPicker("Timeout", selection: Binding(
-                get: { model.settings.screenTimeout ?? .oneMinute },
-                set: { model.setScreenTimeout($0) }
-            )) {
-                ForEach(ChargerScreenTimeout.allCases, id: \.self) { timeout in
-                    Text(timeout.label).tag(timeout)
+            Spacer(minLength: 8)
+            if let action {
+                Button(action.title) {
+                    model.perform(action)
                 }
             }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .platter()
+    }
 
-            labeledPicker("Language", selection: Binding(
-                get: { model.settings.language ?? .english },
-                set: { model.setLanguage($0) }
-            )) {
-                ForEach(ChargerLanguage.allCases, id: \.self) { language in
-                    Text(language.label).tag(language)
+    // MARK: Display
+
+    private var displaySection: some View {
+        SettingsSection(title: "Charger display") {
+            SettingsRow(title: "Brightness") {
+                HStack(spacing: 8) {
+                    Slider(
+                        value: Binding(
+                            get: { Double(model.settings.brightnessPercent ?? 80) },
+                            set: { model.setScreenBrightness(Int($0.rounded())) }
+                        ),
+                        in: 25...100,
+                        step: 5
+                    )
+                    .frame(width: 130)
+                    Text("\(model.settings.brightnessPercent ?? 80)%")
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .frame(width: 36, alignment: .trailing)
+                }
+                .disabled(!model.canControlPorts)
+            }
+            SettingsRow(title: "Turn off after") {
+                menuPicker(selection: Binding(
+                    get: { model.settings.screenTimeout ?? .oneMinute },
+                    set: { model.setScreenTimeout($0) }
+                )) {
+                    ForEach(ChargerScreenTimeout.allCases, id: \.self) { timeout in
+                        Text(timeout.label).tag(timeout)
+                    }
                 }
             }
-
-            labeledPicker("Orientation", selection: Binding(
-                get: { model.settings.orientation ?? .up },
-                set: { model.setScreenOrientation($0) }
-            )) {
-                ForEach(ChargerOrientation.allCases, id: \.self) { orientation in
-                    Text(orientation.label).tag(orientation)
+            SettingsRow(title: "Language") {
+                menuPicker(selection: Binding(
+                    get: { model.settings.language ?? .english },
+                    set: { model.setLanguage($0) }
+                )) {
+                    ForEach(ChargerLanguage.allCases, id: \.self) { language in
+                        Text(language.label).tag(language)
+                    }
                 }
             }
-
-            Toggle(
-                "Auto-rotate",
-                isOn: Binding(
+            SettingsRow(title: "Orientation") {
+                menuPicker(selection: Binding(
+                    get: { model.settings.orientation ?? .up },
+                    set: { model.setScreenOrientation($0) }
+                )) {
+                    ForEach(ChargerOrientation.allCases, id: \.self) { orientation in
+                        Text(orientation.label).tag(orientation)
+                    }
+                }
+            }
+            SettingsRow(title: "Rotate automatically", showsDivider: false) {
+                settingsSwitch("Rotate automatically", isOn: Binding(
                     get: { model.settings.autoRotate ?? true },
                     set: { model.setAutoRotate($0) }
-                )
-            )
-            .disabled(!model.canControlPorts)
+                ))
+                .disabled(!model.canControlPorts)
+            }
         }
     }
 
-    private var screensaverSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionTitle("Screensaver")
-            Text("Square \(ScreensaverImage.pixelSize)×\(ScreensaverImage.pixelSize) looks sharpest.")
-                .font(.caption2)
+    // MARK: Custom split
+
+    private var customSection: some View {
+        let split = CustomChargeSplit(portWatts: [
+            UInt8(customC1),
+            UInt8(customC2),
+            UInt8(customC3)
+        ])
+        return SettingsSection(
+            title: "Custom split",
+            footer: "Each port gets 0 W or 15–140 W, up to 160 W in total. Applying switches the charger to Custom mode."
+        ) {
+            VStack(alignment: .leading, spacing: 6) {
+                PowerShareBar(segments: [
+                    .init(index: 1, watts: Double(customC1)),
+                    .init(index: 2, watts: Double(customC2)),
+                    .init(index: 3, watts: Double(customC3))
+                ])
+                HStack {
+                    Text("Allocated")
+                    Spacer()
+                    Text("\(split.totalWatts) of \(Int(ChargerTelemetry.capacityWatts)) W")
+                        .monospacedDigit()
+                }
+                .font(.subheadline)
                 .foregroundStyle(.secondary)
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 10)
+            .padding(.bottom, 8)
+            Divider().padding(.leading, 12)
+
+            wattRow(1, value: $customC1)
+            wattRow(2, value: $customC2)
+            wattRow(3, value: $customC3)
+
+            HStack(spacing: 8) {
+                if let error = split.validationError {
+                    Label(error, systemImage: "exclamationmark.circle.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(.red)
+                } else if model.telemetry.chargingMode == .custom, model.settings.customSplit == split {
+                    Label("Active on the charger", systemImage: "checkmark.circle.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                Button("Apply Split") {
+                    model.setCustomChargeSplit(split)
+                }
+                .disabled(!model.canControlPorts || split.validationError != nil)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+        }
+    }
+
+    @ViewBuilder
+    private func wattRow(_ index: Int, value: Binding<Int>) -> some View {
+        HStack(spacing: 8) {
+            portDot(index)
+            Text("C\(index)")
+                .fontWeight(.medium)
+            if let nickname = preferences.portNicknames[index] {
+                Text(nickname)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Text("\(value.wrappedValue) W")
+                .monospacedDigit()
+                .frame(minWidth: 44, alignment: .trailing)
+            if !isScreenshotExport {
+                Stepper("C\(index) watts", value: value, in: 0...140, step: 5)
+                    .labelsHidden()
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(minHeight: 34)
+        Divider().padding(.leading, 12)
+    }
+
+    // MARK: Screensaver
+
+    private var screensaverSection: some View {
+        SettingsSection(
+            title: "Screensaver",
+            footer: "The charger keeps four images. A square \(ScreensaverImage.pixelSize) × \(ScreensaverImage.pixelSize) picture looks sharpest."
+        ) {
+            HStack(spacing: 0) {
                 ForEach(0..<ScreensaverStore.slotCount, id: \.self) { index in
+                    if index > 0 {
+                        Spacer(minLength: 6)
+                    }
                     screensaverSlot(index)
                 }
             }
-            HStack {
-                Button(screensaverStore.isFull ? "Replace oldest…" : "Add image…") {
+            .padding(12)
+            Divider().padding(.leading, 12)
+            HStack(spacing: 8) {
+                screensaverStatus
+                Spacer(minLength: 8)
+                Button(screensaverStore.isFull ? "Replace Oldest…" : "Add Image…") {
                     if screensaverStore.isFull {
                         confirmReplace = true
                     } else {
@@ -136,27 +274,37 @@ struct SettingsView: View {
                     }
                 }
                 .disabled(!model.canControlPorts || isScreensaverBusy)
-                Spacer()
             }
-            if let counts = model.screensaverProgress.uploadCounts {
-                ProgressView(value: Double(counts.current), total: Double(counts.total))
-            }
-            if let label = model.screensaverProgress.label {
-                Text(label)
-                    .font(.caption)
-                    .foregroundStyle(screensaverFailed ? .red : .secondary)
-            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
         }
         .confirmationDialog(
-            "Replace oldest screensaver?",
+            "Replace the oldest screensaver?",
             isPresented: $confirmReplace
         ) {
-            Button("Replace oldest", role: .destructive) {
+            Button("Replace Oldest", role: .destructive) {
                 pickScreensaverImage()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("The charger keeps four images. A new one overwrites the oldest on the device. This cannot be undone over Bluetooth.")
+        }
+    }
+
+    @ViewBuilder
+    private var screensaverStatus: some View {
+        if let counts = model.screensaverProgress.uploadCounts {
+            ProgressView(value: Double(counts.current), total: Double(counts.total))
+                .frame(maxWidth: 160)
+        } else if let label = model.screensaverProgress.label {
+            Label(label, systemImage: screensaverFailed ? "exclamationmark.circle.fill" : "arrow.triangle.2.circlepath")
+                .font(.subheadline)
+                .foregroundStyle(screensaverFailed ? .red : .secondary)
+                .lineLimit(2)
+        } else {
+            Text("\(screensaverStore.slots.count) of \(ScreensaverStore.slotCount) stored")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -184,11 +332,13 @@ struct SettingsView: View {
         (0..<ScreensaverStore.slotCount).first { screensaverStore.slots[safe: $0] == nil }
     }
 
+    /// Square thumbnails: the charger shows a square picture, so the slot should too.
     private func screensaverSlot(_ index: Int) -> some View {
         let slot = screensaverStore.slots[safe: index]
         let showsUnknown = slot == nil && unknownOnCharger != nil && firstEmptySlotIndex == index
         let selected = (slot?.reportedID != nil && slot?.reportedID == model.settings.screensaverReportedID)
             || showsUnknown
+        let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
         return Button {
             if let slot {
                 model.selectScreensaver(slot)
@@ -197,8 +347,7 @@ struct SettingsView: View {
             }
         } label: {
             ZStack {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color(nsColor: .controlBackgroundColor))
+                shape.fill(Color.primary.opacity(0.05))
                 if let slot, let image = NSImage(data: slot.jpeg) {
                     Image(nsImage: image)
                         .resizable()
@@ -211,18 +360,32 @@ struct SettingsView: View {
                         .padding(4)
                 } else {
                     Image(systemName: "plus")
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.tertiary)
                 }
             }
-            .frame(height: 120)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .frame(width: Self.thumbnailSize, height: Self.thumbnailSize)
+            .clipShape(shape)
             .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(selected ? Color.accentColor : Color(nsColor: .separatorColor), lineWidth: selected ? 2 : 1)
+                shape.strokeBorder(
+                    selected ? Color.accentColor : Color.primary.opacity(0.1),
+                    lineWidth: selected ? 2.5 : 1
+                )
             )
+            .overlay(alignment: .bottomTrailing) {
+                if selected, slot != nil {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 14))
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(.white, Color.accentColor)
+                        .padding(4)
+                }
+            }
+            .contentShape(shape)
         }
         .buttonStyle(.plain)
         .disabled(!model.canControlPorts || isScreensaverBusy || showsUnknown)
+        .help(slot == nil ? "Add an image" : "Show this image on the charger")
     }
 
     private func pickScreensaverImage() {
@@ -242,88 +405,28 @@ struct SettingsView: View {
         openWindow(id: "screensaver-crop")
     }
 
-    private var customSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionTitle("Custom split")
-            Text("Each port 0 or 15–140 W, 160 W total.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            wattRow("C1", value: $customC1)
-            wattRow("C2", value: $customC2)
-            wattRow("C3", value: $customC3)
-            let split = CustomChargeSplit(portWatts: [
-                UInt8(customC1),
-                UInt8(customC2),
-                UInt8(customC3)
-            ])
-            HStack {
-                Text("\(split.totalWatts) W")
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button("Apply custom") {
-                    model.setCustomChargeSplit(split)
-                }
-                .disabled(!model.canControlPorts || split.validationError != nil)
-            }
-            if let error = split.validationError {
-                Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-            }
-        }
-    }
+    // MARK: Port names
 
-    private var macSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionTitle("This Mac")
-            Toggle(
-                "Open at login",
-                isOn: Binding(
-                    get: { preferences.launchesAtLogin },
-                    set: { preferences.setLaunchesAtLogin($0) }
-                )
-            )
-            Toggle(
-                "Notify when a port idles 10 min",
-                isOn: Binding(
-                    get: { preferences.idleNotificationsEnabled },
-                    set: { preferences.setIdleNotificationsEnabled($0) }
-                )
-            )
-            Toggle(
-                "Release Bluetooth when this Mac sleeps",
-                isOn: Binding(
-                    get: { preferences.releaseBluetoothOnSleep },
-                    set: { preferences.setReleaseBluetoothOnSleep($0) }
-                )
-            )
-            Text("Charging history pauses until the Mac wakes.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+    private var portNamesSection: some View {
+        SettingsSection(
+            title: "Port names",
+            footer: "Shown in the menu, notifications, and Shortcuts."
+        ) {
             ForEach(1...3, id: \.self) { index in
-                HStack {
-                    Text("C\(index) name")
+                HStack(spacing: 8) {
+                    portDot(index)
+                    Text("C\(index)")
+                        .fontWeight(.medium)
+                        .frame(width: 22, alignment: .leading)
                     nicknameField(index)
                 }
-            }
-            Button("Save port names") {
-                for index in 1...3 {
-                    preferences.setNickname(nicknameDrafts[index] ?? "", forPort: index)
+                .padding(.horizontal, 12)
+                .frame(minHeight: 36)
+                if index < 3 {
+                    Divider().padding(.leading, 12)
                 }
             }
-            Divider()
-            Button("Diagnostics…") {
-                AuxiliaryWindow.open(.diagnostics, using: openWindow)
-            }
-            Text("Connection log, firmware, serial, and MAC.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
-    }
-
-    private func sectionTitle(_ title: String) -> some View {
-        Text(title)
-            .font(.subheadline.weight(.semibold))
     }
 
     @ViewBuilder
@@ -331,51 +434,119 @@ struct SettingsView: View {
         let name = nicknameDrafts[index] ?? ""
         if isScreenshotExport {
             Text(name.isEmpty ? "Optional" : name)
-                .foregroundStyle(name.isEmpty ? .secondary : .primary)
+                .foregroundStyle(name.isEmpty ? .tertiary : .primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 4)
-                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 5))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 5)
-                        .stroke(Color(nsColor: .separatorColor).opacity(0.6), lineWidth: 1)
-                )
         } else {
+            // Saved as you type; there is no separate Save step.
             TextField("Optional", text: Binding(
                 get: { nicknameDrafts[index] ?? "" },
-                set: { nicknameDrafts[index] = $0 }
+                set: { value in
+                    nicknameDrafts[index] = value
+                    preferences.setNickname(value, forPort: index)
+                }
             ))
-            .textFieldStyle(.roundedBorder)
-            .onSubmit {
-                preferences.setNickname(nicknameDrafts[index] ?? "", forPort: index)
+            .textFieldStyle(.plain)
+        }
+    }
+
+    // MARK: This Mac
+
+    private var macSection: some View {
+        SettingsSection(title: "This Mac") {
+            SettingsRow(title: "Open at login") {
+                settingsSwitch("Open at login", isOn: Binding(
+                    get: { preferences.launchesAtLogin },
+                    set: { preferences.setLaunchesAtLogin($0) }
+                ))
+            }
+            SettingsRow(
+                title: "Idle port alert",
+                subtitle: "Notify after 10 minutes at 0 W."
+            ) {
+                settingsSwitch("Idle port alert", isOn: Binding(
+                    get: { preferences.idleNotificationsEnabled },
+                    set: { preferences.setIdleNotificationsEnabled($0) }
+                ))
+            }
+            SettingsRow(
+                title: "Release Bluetooth during sleep",
+                subtitle: "Charging history pauses until the Mac wakes."
+            ) {
+                settingsSwitch("Release Bluetooth during sleep", isOn: Binding(
+                    get: { preferences.releaseBluetoothOnSleep },
+                    set: { preferences.setReleaseBluetoothOnSleep($0) }
+                ))
+            }
+            SettingsRow(
+                title: "Connection diagnostics",
+                subtitle: "Log, firmware, serial, and MAC.",
+                showsDivider: false
+            ) {
+                Button("Open…") {
+                    AuxiliaryWindow.open(.diagnostics, using: openWindow)
+                }
             }
         }
+    }
+
+    // MARK: Building blocks
+
+    private func portDot(_ index: Int) -> some View {
+        Circle()
+            .fill(PortPalette.color(index))
+            .frame(width: 8, height: 8)
+            .accessibilityHidden(true)
     }
 
     @ViewBuilder
-    private func wattRow(_ title: String, value: Binding<Int>) -> some View {
+    private func settingsSwitch(_ title: String, isOn: Binding<Bool>) -> some View {
         if isScreenshotExport {
-            Text("\(title)  \(value.wrappedValue) W")
+            ExportSwitch(isOn: isOn.wrappedValue)
         } else {
-            Stepper(value: value, in: 0...140, step: 5) {
-                Text("\(title)  \(value.wrappedValue) W")
-            }
+            Toggle(title, isOn: isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
         }
     }
 
-    private func labeledPicker<Selection: Hashable, Content: View>(
-        _ title: String,
+    private func menuPicker<Selection: Hashable, Content: View>(
         selection: Binding<Selection>,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        Picker(title, selection: selection) {
+        Picker("", selection: selection) {
             content()
         }
+        .labelsHidden()
+        .fixedSize()
         .disabled(!model.canControlPorts)
+    }
+}
+
+/// ImageRenderer cannot draw NSSwitch, so screenshot export uses a stand-in with its footprint.
+private struct ExportSwitch: View {
+    let isOn: Bool
+
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        Capsule()
+            .fill(isOn ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(Color.primary.opacity(0.15)))
+            .frame(width: 32, height: 18)
+            .overlay(alignment: isOn ? .trailing : .leading) {
+                Circle()
+                    .fill(.white)
+                    .shadow(color: .black.opacity(0.2), radius: 1, y: 0.5)
+                    .padding(1.5)
+            }
+            .opacity(isEnabled ? 1 : 0.45)
     }
 }
 
 #Preview("Settings") {
     SettingsView(model: PreviewSample.connectedModel())
-        .frame(width: 680)
+}
+
+#Preview("Settings, disconnected") {
+    SettingsView(model: PreviewSample.pausedModel())
 }

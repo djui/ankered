@@ -41,11 +41,28 @@ enum PreviewSample {
     }
 
     static func pausedModel() -> AppModel {
+        disconnectedModel(.idle, isPaused: true)
+    }
+
+    static func disconnectedModel(_ state: ChargerConnectionState, isPaused: Bool = false) -> AppModel {
         AppModel(
-            previewState: .idle,
+            previewState: state,
             identity: ChargerIdentity(productName: "Anker Prime 160W", firmware: "1.5.1.2"),
             telemetry: .empty,
-            isPaused: true
+            isPaused: isPaused
+        )
+    }
+
+    /// Connected, with an over-temperature report and C3 switched off.
+    static func faultModel() -> AppModel {
+        var sample = telemetry
+        sample.ports[2].isOutputEnabled = false
+        return AppModel(
+            previewState: .connected,
+            identity: ChargerIdentity(productName: "Anker Prime 160W", firmware: "1.5.1.2"),
+            telemetry: sample,
+            settings: ChargerSettings(fault: .overTemperature),
+            preferences: AppPreferences(previewNicknames: [1: "MacBook", 2: "iPhone"])
         )
     }
 
@@ -91,7 +108,7 @@ enum PreviewSample {
     static func chargerHistory(now: Date = Date()) -> ChargerPortHistory {
         let count = 48
         return ChargerPortHistory(
-            capturedAt: now.addingTimeInterval(-TimeInterval(count)),
+            capturedAt: now,
             ports: (1...3).map { index in
                 PortHistorySeries(
                     index: index,
@@ -202,49 +219,17 @@ enum ScreenshotExporter {
     static func exportIfRequested() {
         guard isRequested, !didExport else { return }
         guard let directory = destinationDirectory() else {
-            fputs("usage: AnkerPower --export-screenshots <directory>\n", stderr)
+            fputs("usage: AnkerPower --export-screenshots <directory> [--all-states]\n", stderr)
             exit(1)
         }
         didExport = true
 
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            let model = PreviewSample.connectedModel()
-            try write(
-                MenuContentView(model: model)
-                    .frame(width: 280)
-                    .padding(2),
-                to: directory.appendingPathComponent("menu.png"),
-                scale: 2
-            )
-            try write(
-                HistoryView(model: model)
-                    .frame(width: 760, height: 460),
-                to: directory.appendingPathComponent("history.png"),
-                scale: 2
-            )
-            try write(
-                DiagnosticsView(model: model)
-                    .frame(width: 860, height: 520),
-                to: directory.appendingPathComponent("diagnostics.png"),
-                scale: 2
-            )
-            try write(
-                SettingsView(model: model)
-                    .frame(width: 680)
-                    .padding(2),
-                to: directory.appendingPathComponent("settings.png"),
-                scale: 2
-            )
-            if let image = PreviewSample.screensaverPreviewImage().screensaverCGImage {
-                model.beginScreensaverCrop(image: image)
+            try exportDocumentationSet(to: directory)
+            if ProcessInfo.processInfo.arguments.contains("--all-states") {
+                try exportStateVariants(to: directory)
             }
-            try write(
-                ScreensaverCropView(model: model)
-                    .frame(width: 420),
-                to: directory.appendingPathComponent("screensaver.png"),
-                scale: 2
-            )
         } catch {
             fputs("screenshot export failed: \(error)\n", stderr)
             exit(1)
@@ -252,12 +237,83 @@ enum ScreenshotExporter {
         exit(0)
     }
 
+    /// The images README.md and the landing page use, in light (`menu.png`) and dark (`menu-dark.png`).
+    private static func exportDocumentationSet(to directory: URL) throws {
+        for scheme in [ColorScheme.light, .dark] {
+            let suffix = scheme == .dark ? "-dark" : ""
+            func url(_ name: String) -> URL {
+                directory.appendingPathComponent("\(name)\(suffix).png")
+            }
+            let model = PreviewSample.connectedModel()
+            try write(MenuContentView(model: model).padding(2), to: url("menu"), colorScheme: scheme)
+            try write(
+                HistoryView(model: model).frame(width: 760, height: 520),
+                to: url("history"),
+                colorScheme: scheme
+            )
+            try write(
+                DiagnosticsView(model: model).frame(width: 860, height: 440),
+                to: url("diagnostics"),
+                colorScheme: scheme
+            )
+            try write(SettingsView(model: model).padding(2), to: url("settings"), colorScheme: scheme)
+            if let image = PreviewSample.screensaverPreviewImage().screensaverCGImage {
+                model.beginScreensaverCrop(image: image)
+            }
+            try write(
+                ScreensaverCropView(model: model).frame(width: 420),
+                to: url("screensaver"),
+                colorScheme: scheme
+            )
+        }
+    }
+
+    /// Every popover state in light and dark, for design review. Not used by the docs.
+    private static func exportStateVariants(to directory: URL) throws {
+        let menus: [(name: String, model: () -> AppModel)] = [
+            ("connected", PreviewSample.connectedModel),
+            ("fault", PreviewSample.faultModel),
+            ("paused", PreviewSample.pausedModel),
+            ("searching", { PreviewSample.disconnectedModel(.scanning) }),
+            ("failed", { PreviewSample.disconnectedModel(.failed("Charger disconnected")) }),
+            ("bluetooth-off", { PreviewSample.disconnectedModel(.bluetoothUnavailable(.poweredOff)) })
+        ]
+        for scheme in [ColorScheme.light, .dark] {
+            let suffix = scheme == .dark ? "dark" : "light"
+            for menu in menus {
+                try write(
+                    MenuContentView(model: menu.model()).padding(2),
+                    to: directory.appendingPathComponent("menu-\(menu.name)-\(suffix).png"),
+                    colorScheme: scheme
+                )
+            }
+        }
+        try write(
+            SettingsView(model: PreviewSample.pausedModel()).padding(2),
+            to: directory.appendingPathComponent("settings-disconnected-light.png")
+        )
+    }
+
     @MainActor
-    private static func write<V: View>(_ view: V, to url: URL, scale: CGFloat) throws {
+    private static func write<V: View>(
+        _ view: V,
+        to url: URL,
+        colorScheme: ColorScheme = .light,
+        scale: CGFloat = 2
+    ) throws {
+        // ImageRenderer resolves AppKit catalog colors against the system appearance, so pin
+        // the window background to the requested scheme before handing it to SwiftUI.
+        var background = NSColor.windowBackgroundColor
+        NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua)?.performAsCurrentDrawingAppearance {
+            background = NSColor.windowBackgroundColor.usingColorSpace(.sRGB) ?? background
+        }
+        // The flexible frame keeps the background under the whole canvas even when a view's
+        // measured height and drawn height differ slightly (wrapping text in two columns).
         let rendered = view
             .environment(\.isScreenshotExport, true)
-            .preferredColorScheme(.light)
-            .background(Color(nsColor: .windowBackgroundColor))
+            .environment(\.colorScheme, colorScheme)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(Color(nsColor: background))
         let renderer = ImageRenderer(content: rendered)
         renderer.scale = scale
         renderer.proposedSize = ProposedViewSize(width: nil, height: nil)

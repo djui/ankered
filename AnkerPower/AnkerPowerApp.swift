@@ -10,6 +10,9 @@ struct AnkerPowerApp: App {
             DispatchQueue.main.async {
                 ScreenshotExporter.exportIfRequested()
             }
+        } else if ProcessInfo.processInfo.arguments.contains("--demo") {
+            // Sample data and no Bluetooth, for UI work without a charger.
+            _model = StateObject(wrappedValue: PreviewSample.connectedModel())
         } else {
             _model = StateObject(wrappedValue: AppModel())
         }
@@ -26,7 +29,7 @@ struct AnkerPowerApp: App {
         Window("Charging History", id: "history") {
             HistoryView(model: model)
         }
-        .defaultSize(width: 760, height: 460)
+        .defaultSize(width: 780, height: 560)
 
         Window("Connection Diagnostics", id: "diagnostics") {
             DiagnosticsView(model: model)
@@ -36,7 +39,7 @@ struct AnkerPowerApp: App {
         Window("Settings", id: "settings") {
             SettingsView(model: model)
         }
-        .defaultSize(width: 680, height: 520)
+        .defaultSize(width: 720, height: 680)
         .windowResizability(.contentSize)
 
         Window("Screensaver", id: "screensaver-crop") {
@@ -56,7 +59,10 @@ private struct MenuBarStatusView: View {
             if model.connectionState.isConnected {
                 HStack(spacing: 3) {
                     Image(systemName: "bolt.square.fill")
+                    // Tabular digits keep the status item, and everything left of it, from
+                    // shifting sideways each time the reading changes.
                     Text(model.menuBarTitle)
+                        .monospacedDigit()
                 }
                 .font(.system(.body, design: .default))
             } else if model.isPaused {

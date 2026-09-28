@@ -103,32 +103,31 @@ final class AppModel: ObservableObject {
         connectionState.isConnected && (bluetooth?.canControlPorts ?? previewCanControl)
     }
 
-    var statusCaption: String {
-        if isSuspendedForSleep {
-            if identity.isEmpty {
-                return "Sleeping"
-            }
-            return "Sleeping · \(identity.displayName)"
+    var connectionStatus: ConnectionStatus {
+        ConnectionStatus.make(
+            state: connectionState,
+            isPaused: isPaused,
+            isSuspendedForSleep: isSuspendedForSleep,
+            identity: identity
+        )
+    }
+
+    func perform(_ action: ConnectionStatus.Action) {
+        switch action {
+        case .resume:
+            resumeConnection()
+        case .reconnect:
+            reconnect()
+        case .openBluetoothSettings:
+            Self.openSystemSettings("x-apple.systempreferences:com.apple.BluetoothSettings")
+        case .openPrivacySettings:
+            Self.openSystemSettings("x-apple.systempreferences:com.apple.preference.security?Privacy_Bluetooth")
         }
-        if isPaused {
-            if identity.isEmpty {
-                return "Paused"
-            }
-            return "Paused · \(identity.displayName)"
-        }
-        if connectionState.isConnected {
-            if let firmware = identity.firmwareLabel {
-                return "\(identity.displayName) · \(firmware)"
-            }
-            return "Connected: \(identity.displayName)"
-        }
-        if !identity.isEmpty {
-            if let firmware = identity.firmwareLabel {
-                return "Last seen \(identity.displayName) · \(firmware)"
-            }
-            return "Last seen \(identity.displayName)"
-        }
-        return connectionState.label
+    }
+
+    private static func openSystemSettings(_ link: String) {
+        guard let url = URL(string: link) else { return }
+        NSWorkspace.shared.open(url)
     }
 
     func reconnect() {
@@ -522,6 +521,7 @@ final class AppModel: ObservableObject {
     }
 
     private func systemWillSleep() {
+        history.flush()
         guard preferences.releaseBluetoothOnSleep, !isPaused, !isSuspendedForSleep else { return }
         isSuspendedForSleep = true
         bluetooth?.suspendForSystemSleep()

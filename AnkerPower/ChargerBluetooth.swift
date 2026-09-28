@@ -801,18 +801,18 @@ extension ChargerBluetooth: @preconcurrency CBCentralManagerDelegate {
         case .poweredOn:
             if !userRequestedDisconnect, !suspendedForSystemSleep { scan() }
         case .poweredOff:
-            publish(.bluetoothUnavailable("Bluetooth is off"))
+            publish(.bluetoothUnavailable(.poweredOff))
         case .unauthorized:
-            publish(.bluetoothUnavailable("Bluetooth permission is required"))
+            publish(.bluetoothUnavailable(.unauthorized))
             watchAuthorization()
         case .unsupported:
-            publish(.bluetoothUnavailable("Bluetooth LE is unavailable"))
+            publish(.bluetoothUnavailable(.unsupported))
         case .resetting:
-            publish(.bluetoothUnavailable("Bluetooth is resetting…"))
+            publish(.bluetoothUnavailable(.resetting))
         case .unknown:
-            publish(.bluetoothUnavailable("Checking Bluetooth…"))
+            publish(.bluetoothUnavailable(.checking))
         @unknown default:
-            publish(.bluetoothUnavailable("Bluetooth is unavailable"))
+            publish(.bluetoothUnavailable(.unavailable))
         }
     }
 

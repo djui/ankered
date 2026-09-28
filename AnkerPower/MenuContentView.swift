@@ -2,6 +2,8 @@ import AppKit
 import SwiftUI
 
 struct MenuContentView: View {
+    static let width: CGFloat = 300
+
     @ObservedObject var model: AppModel
     @Environment(\.openWindow) private var openWindow
 
@@ -23,24 +25,38 @@ struct MenuContentView: View {
     ]
 
     var body: some View {
+        let status = model.connectionStatus
+        let isConnected = model.connectionState.isConnected
+
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 0) {
-                header
-                Divider().padding(.vertical, 10)
+            header(status)
+                .padding(.horizontal, 14)
+                .padding(.top, 14)
+                .padding(.bottom, 12)
 
-                VStack(alignment: .leading, spacing: 13) {
-                    ForEach(model.telemetry.ports) { port in
-                        portRow(port)
-                    }
+            if isConnected {
+                hero
+                    .padding(.horizontal, 14)
+                if let banner = model.settings.fault.banner {
+                    faultBanner(banner)
+                        .padding(.horizontal, 10)
+                        .padding(.top, 12)
                 }
+                portList
+                    .padding(.horizontal, 10)
+                    .padding(.top, 12)
+            } else {
+                notice(status)
+                    .padding(.horizontal, 10)
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 14)
 
-            Divider().padding(.top, 10)
-            statusToolbar
+            Divider()
+                .padding(.horizontal, 14)
+                .padding(.top, 12)
+            actions
         }
-        .frame(width: 280)
+        .frame(width: Self.width)
+        .animation(.snappy(duration: 0.25), value: isConnected)
         .overlay {
             confirmOverlay
         }
@@ -55,35 +71,99 @@ struct MenuContentView: View {
         }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(alignment: .firstTextBaseline) {
-                Label("Total output", systemImage: "bolt.fill")
-                    .font(.headline)
-                Spacer()
-                Text(model.connectionState.isConnected ? model.totalPower.formatted(.number.precision(.fractionLength(0))) : "—")
-                    .font(.system(size: 26, weight: .semibold))
-                    .contentTransition(.numericText())
-                Text("W")
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
-            }
+    // MARK: Header
 
-            if model.connectionState.isConnected, let banner = model.settings.fault.banner {
-                Label(banner, systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
+    private func header(_ status: ConnectionStatus) -> some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 10) {
+                ConnectionBadge(status: status)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(model.identity.displayName)
+                        .font(.headline)
+                        .lineLimit(1)
+                    Text(status.caption)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
             }
+            .accessibilityElement(children: .combine)
 
-            if model.connectionState.isConnected {
-                chargingModeControl
-            } else if let firmware = model.identity.firmwareLabel {
-                Text(firmware)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            Spacer(minLength: 4)
+            connectionControls
+        }
+    }
+
+    @ViewBuilder
+    private var connectionControls: some View {
+        if model.isSuspendedForSleep {
+            EmptyView()
+        } else if model.isPaused {
+            Button {
+                model.resumeConnection()
+            } label: {
+                Image(systemName: "play.fill")
+            }
+            .buttonStyle(IconButtonStyle(emphasis: .prominent))
+            .help("Resume the connection")
+            .accessibilityLabel("Resume connection")
+        } else {
+            HStack(spacing: 2) {
+                Button {
+                    model.reconnect()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(IconButtonStyle())
+                .help("Reconnect: drop the Bluetooth session and connect again")
+                .accessibilityLabel("Reconnect")
+
+                Button {
+                    model.pauseConnection()
+                } label: {
+                    Image(systemName: "pause.fill")
+                }
+                .buttonStyle(IconButtonStyle())
+                .help("Pause: release the charger so the Anker app can connect")
+                .accessibilityLabel("Pause connection")
             }
         }
+    }
+
+    // MARK: Total output
+
+    private var hero: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(AppModel.compactWatts(model.totalPower))
+                    .font(.system(size: 40, weight: .semibold))
+                    .contentTransition(.numericText(value: model.totalPower))
+                Text("W")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 8)
+                chargingModeControl
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Total output")
+            .accessibilityValue("\(AppModel.compactWatts(model.totalPower)) watts")
+
+            PowerShareBar(segments: model.telemetry.ports.map {
+                PowerShareBar.Segment(index: $0.index, watts: $0.isOutputOn ? $0.power : 0)
+            })
+            .accessibilityHidden(true)
+
+            HStack {
+                Text("Total output")
+                Spacer()
+                Text("of \(Int(ChargerTelemetry.capacityWatts)) W")
+            }
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .accessibilityHidden(true)
+        }
+        .animation(.snappy(duration: 0.3), value: model.totalPower)
     }
 
     @ViewBuilder
@@ -103,78 +183,172 @@ struct MenuContentView: View {
                 }
             } label: {
                 Label(model.telemetry.chargingMode?.label ?? "Charging mode", systemImage: "slider.horizontal.3")
-                    .font(.caption)
+                    .font(.subheadline)
             }
             .menuIndicator(.hidden)
-            .help("Charging mode")
+            .fixedSize()
+            .help("Charging mode: how the charger shares its 160 W between ports")
         } else if let mode = model.telemetry.chargingMode {
             Label(mode.label, systemImage: "slider.horizontal.3")
-                .font(.caption)
+                .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
     }
 
-    @ViewBuilder
+    private func faultBanner(_ text: String) -> some View {
+        Label {
+            Text(text)
+                .fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+        }
+        .font(.subheadline)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.orange.opacity(0.14))
+        )
+    }
+
+    // MARK: Ports
+
+    private var portList: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(model.telemetry.ports.enumerated()), id: \.element.id) { offset, port in
+                if offset > 0 {
+                    Divider().padding(.leading, 27)
+                }
+                portRow(port)
+            }
+        }
+        .platter()
+    }
+
     private func portRow(_ port: PortTelemetry) -> some View {
-        let isLive = model.connectionState.isConnected
-        let showOff = isLive && !port.isOutputOn
+        let isDrawing = port.isActive && port.isOutputOn
+        let name = preferences.displayName(forPort: port.index)
 
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 6) {
-                Text(preferences.displayName(forPort: port.index))
-                    .font(.headline)
-                Spacer(minLength: 4)
-                if isLive {
-                    portControls(port)
-                }
-                Text(showOff
-                     ? "Off"
-                     : (isLive
-                        ? "\(port.power.formatted(.number.precision(.fractionLength(port.isActive && port.power < 10 ? 1 : 0)))) W"
-                        : "— W"))
-                    .font(.headline)
-                    .foregroundStyle(isLive && port.isActive && port.isOutputOn ? .primary : .tertiary)
-                    .contentTransition(.numericText())
-            }
+        return HStack(alignment: .top, spacing: 9) {
+            portMarker(port.index, isDrawing: isDrawing)
+                .padding(.top, 4)
 
-            if isLive, port.isActive, port.isOutputOn {
-                Text("\(port.voltage.formatted(.number.precision(.fractionLength(1)))) V · \(port.current.formatted(.number.precision(.fractionLength(2)))) A")
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+                Text(portStatus(port))
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
-            if isLive {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    remainingTimeLine(port, at: context.date)
-                        .onChange(of: context.date) { _, date in
-                            if port.shutdownEndsAt != nil, port.shutdownRemaining(at: date) == nil {
-                                model.noteTimerExpired(portIndex: port.index)
+                    .monospacedDigit()
+                    .foregroundStyle(isDrawing || !port.isOutputOn ? .secondary : .tertiary)
+                    .contentTransition(.numericText())
+                if port.shutdownEndsAt != nil {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        shutdownCountdown(port, at: context.date)
+                            .onChange(of: context.date) { _, date in
+                                if port.shutdownRemaining(at: date) == nil {
+                                    model.noteTimerExpired(portIndex: port.index)
+                                }
                             }
-                        }
+                    }
                 }
+                portDetails(port)
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityValue(portWattsText(port))
 
-            if isLive, let cableInfo = port.cableInfo {
-                detailLine(cableInfo, systemImage: "cable.connector")
+            Spacer(minLength: 6)
+
+            VStack(alignment: .trailing, spacing: 5) {
+                Text(portWattsText(port))
+                    .font(.system(size: 13, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(isDrawing ? .primary : .tertiary)
+                    .contentTransition(.numericText(value: port.power))
+                    .accessibilityHidden(true)
+                portControls(port, name: name)
             }
-            if isLive, let chargingInfo = port.chargingInfo {
-                detailLine(chargingInfo, systemImage: "bolt.circle")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .animation(.snappy(duration: 0.3), value: port)
+    }
+
+    /// Filled dot while the port draws power, a ring otherwise; the color keys the bar above.
+    private func portMarker(_ index: Int, isDrawing: Bool) -> some View {
+        let color = PortPalette.color(index)
+        return ZStack {
+            Circle().strokeBorder(color, lineWidth: 1.5)
+            if isDrawing {
+                Circle().fill(color)
             }
-            if isLive, let deviceInfo = port.deviceInfo {
-                detailLine(deviceInfo, systemImage: "desktopcomputer")
-            }
+        }
+        .frame(width: 8, height: 8)
+        .accessibilityHidden(true)
+    }
+
+    private func portStatus(_ port: PortTelemetry) -> String {
+        if !port.isOutputOn {
+            return "Output off"
+        }
+        if port.isActive {
+            let volts = port.voltage.formatted(.number.precision(.fractionLength(1)))
+            let amps = port.current.formatted(.number.precision(.fractionLength(2)))
+            return "\(volts) V · \(amps) A"
+        }
+        let hasSomethingPlugged = port.cableInfo != nil || port.chargingInfo != nil || port.deviceInfo != nil
+        return hasSomethingPlugged ? "Not charging" : "Not in use"
+    }
+
+    private func portWattsText(_ port: PortTelemetry) -> String {
+        if !port.isOutputOn {
+            return "Off"
+        }
+        return "\(AppModel.compactWatts(port.isActive ? port.power : 0)) W"
+    }
+
+    @ViewBuilder
+    private func shutdownCountdown(_ port: PortTelemetry, at date: Date) -> some View {
+        if let remaining = port.shutdownRemaining(at: date) {
+            detailLine("Turns off in \(Self.formatRemaining(remaining))", systemImage: "timer", emphasized: true)
+        } else {
+            // Keeps a view in place so the expiry check above keeps running until the port flips.
+            Color.clear.frame(height: 0)
         }
     }
 
     @ViewBuilder
-    private func remainingTimeLine(_ port: PortTelemetry, at date: Date) -> some View {
-        if let remaining = port.shutdownRemaining(at: date) {
-            detailLine("Off in \(Self.formatRemaining(remaining))", systemImage: "timer")
+    private func portDetails(_ port: PortTelemetry) -> some View {
+        if let chargingInfo = port.chargingInfo {
+            detailLine(chargingInfo, systemImage: "bolt.circle")
+        }
+        if let deviceInfo = port.deviceInfo {
+            detailLine(deviceInfo, systemImage: Self.deviceSymbol(for: deviceInfo))
+        }
+        if let cableInfo = port.cableInfo {
+            detailLine(cableInfo, systemImage: "cable.connector")
         }
     }
 
-    private func portControls(_ port: PortTelemetry) -> some View {
+    private func detailLine(_ text: String, systemImage: String, emphasized: Bool = false) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 5) {
+            Image(systemName: systemImage)
+                .font(.system(size: 10))
+                .foregroundStyle(emphasized ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(HierarchicalShapeStyle.tertiary))
+                .frame(width: 13)
+            Text(text)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.subheadline)
+    }
+
+    private func portControls(_ port: PortTelemetry, name: String) -> some View {
         let controlsEnabled = model.canControlPorts && !model.isPortCommandInFlight(port.index)
+        let unavailable = "Port control is unavailable on this connection"
+
         return HStack(spacing: 2) {
             Menu {
                 Button {
@@ -189,6 +363,7 @@ struct MenuContentView: View {
                         timerMenuLabel(preset.label, selected: isSelectedPreset(port, seconds: preset.seconds))
                     }
                 }
+                Divider()
                 Button {
                     let remaining = port.shutdownRemaining() ?? TimeInterval(port.shutdownDurationSeconds ?? 0)
                     customHours = min(23, max(0, Int(remaining) / 3_600))
@@ -198,14 +373,17 @@ struct MenuContentView: View {
                     }
                     customTimerPort = port.index
                 } label: {
-                    timerMenuLabel("Customize", selected: isCustomTimer(port))
+                    timerMenuLabel("Custom…", selected: isCustomTimer(port))
                 }
             } label: {
-                Image(systemName: hasActiveTimer(port) ? "timer.circle.fill" : "timer")
-                    .font(.body)
+                Image(systemName: "timer")
             }
+            .menuStyle(.button)
+            .buttonStyle(IconButtonStyle(emphasis: hasActiveTimer(port) ? .tinted : .plain))
             .menuIndicator(.hidden)
-            .help(model.canControlPorts ? "Shutdown timer" : "Port control is unavailable on this connection")
+            .fixedSize()
+            .help(model.canControlPorts ? "Shutdown timer for \(name)" : unavailable)
+            .accessibilityLabel("Shutdown timer for \(name)")
 
             Button {
                 if port.isOutputOn {
@@ -214,19 +392,17 @@ struct MenuContentView: View {
                     model.setPortOutput(index: port.index, enabled: true)
                 }
             } label: {
-                Image(systemName: port.isOutputOn ? "power.circle.fill" : "power.circle")
-                    .font(.body)
+                Image(systemName: "power")
             }
-            .buttonStyle(.plain)
+            .buttonStyle(IconButtonStyle(emphasis: port.isOutputOn ? .plain : .tinted))
             .help(
                 model.canControlPorts
-                    ? (port.isOutputOn ? "Turn off C\(port.index) output" : "Turn on C\(port.index) output")
-                    : "Port control is unavailable on this connection"
+                    ? (port.isOutputOn ? "Turn off \(name)" : "Turn on \(name)")
+                    : unavailable
             )
+            .accessibilityLabel(port.isOutputOn ? "Turn off \(name)" : "Turn on \(name)")
         }
         .disabled(!controlsEnabled)
-        .buttonStyle(.plain)
-        .controlSize(.small)
     }
 
     @ViewBuilder
@@ -240,20 +416,23 @@ struct MenuContentView: View {
 
     private var customTimerPopover: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Custom shutdown timer")
+            Text("Turn off \(customTimerPort.map { preferences.displayName(forPort: $0) } ?? "port") after")
                 .font(.headline)
             Stepper(value: $customHours, in: 0...23) {
                 Text("\(customHours) \(customHours == 1 ? "hour" : "hours")")
+                    .monospacedDigit()
             }
             Stepper(value: $customMinutes, in: 0...59) {
                 Text("\(customMinutes) \(customMinutes == 1 ? "minute" : "minutes")")
+                    .monospacedDigit()
             }
             HStack {
                 Spacer()
                 Button("Cancel") {
                     customTimerPort = nil
                 }
-                Button("Set") {
+                .keyboardShortcut(.cancelAction)
+                Button("Start Timer") {
                     if let index = customTimerPort {
                         let seconds = UInt32(customHours * 3_600 + customMinutes * 60)
                         model.setPortShutdownTimer(index: index, seconds: min(seconds, 86_400))
@@ -265,7 +444,7 @@ struct MenuContentView: View {
             }
         }
         .padding(14)
-        .frame(width: 220)
+        .frame(width: 240)
     }
 
     private func hasActiveTimer(_ port: PortTelemetry) -> Bool {
@@ -281,102 +460,127 @@ struct MenuContentView: View {
         return !Self.hourPresets.contains(where: { $0.seconds == duration })
     }
 
-    private func detailLine(_ text: String, systemImage: String) -> some View {
-        Label(text, systemImage: systemImage)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
+    // MARK: Not connected
+
+    private func notice(_ status: ConnectionStatus) -> some View {
+        VStack(spacing: 6) {
+            Text(status.headline)
+                .font(.headline)
+                .multilineTextAlignment(.center)
+            Text(status.message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            if let action = status.action {
+                Button(action.title) {
+                    model.perform(action)
+                }
+                .buttonStyle(.borderedProminent)
+                .padding(.top, 6)
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 18)
+        .frame(maxWidth: .infinity)
+        .platter()
     }
 
-    private var statusToolbar: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(model.connectionState.isConnected ? Color.green : Color.secondary)
-                    .frame(width: 7, height: 7)
-                Text(model.statusCaption)
-                    .font(.caption)
-                    .lineLimit(1)
-            }
-            .padding(.horizontal, 14)
-            .padding(.top, 10)
-            .padding(.bottom, 4)
+    // MARK: Actions
 
-            MenuActionRow(
-                title: model.isPaused ? "Resume" : "Pause",
-                systemImage: model.isPaused ? "play" : "pause",
-                help: model.isPaused
-                    ? "Resume connection"
-                    : "Pause connection so another app can use the charger"
-            ) {
-                if model.isPaused {
-                    model.resumeConnection()
-                } else {
-                    model.pauseConnection()
-                }
-            }
-            MenuActionRow(title: "Reconnect", systemImage: "arrow.clockwise", help: "Reconnect") {
-                model.reconnect()
-            }
-            MenuActionRow(title: "History", systemImage: "chart.xyaxis.line", help: "Charging history") {
+    private var actions: some View {
+        VStack(spacing: 0) {
+            MenuActionRow(title: "Charging History", systemImage: "chart.xyaxis.line") {
                 AuxiliaryWindow.open(.history, using: openWindow)
             }
-            Divider()
-            MenuActionRow(title: "Settings", systemImage: "gearshape", help: "Settings") {
+            MenuActionRow(
+                title: "Settings…",
+                systemImage: "gearshape",
+                shortcut: KeyboardShortcut(",", modifiers: .command)
+            ) {
                 AuxiliaryWindow.open(.settings, using: openWindow)
             }
-            MenuActionRow(title: "About", systemImage: "info.circle", help: "About Anker Power") {
+            Divider()
+                .padding(.horizontal, 14)
+                .padding(.vertical, 5)
+            MenuActionRow(title: "About Anker Power", systemImage: "info.circle") {
                 AppAbout.show()
             }
-            MenuActionRow(title: "Quit", systemImage: "xmark", help: "Quit Anker Power") {
+            MenuActionRow(
+                title: "Quit Anker Power",
+                systemImage: "xmark",
+                shortcut: KeyboardShortcut("q", modifiers: .command)
+            ) {
                 NSApplication.shared.terminate(nil)
             }
         }
-        .padding(.bottom, 6)
+        .padding(.vertical, 6)
     }
+
+    // MARK: Turn-off confirmation
 
     @ViewBuilder
     private var confirmOverlay: some View {
         if let portIndex = confirmOffPort {
+            let name = preferences.displayName(forPort: portIndex)
             ZStack {
-                Color.black.opacity(0.4)
+                Color.black.opacity(0.28)
                     .contentShape(Rectangle())
                     .onTapGesture {
                         confirmOffPort = nil
                     }
 
-                VStack(spacing: 12) {
-                    Text("Confirm")
+                VStack(spacing: 10) {
+                    Image(systemName: "power")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    Text("Turn off \(name)?")
                         .font(.headline)
-                    Text("Are you sure you want to turn off output on this port?")
+                    Text("The connected device stops charging until you turn the port back on.")
                         .font(.subheadline)
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
 
-                    HStack(spacing: 10) {
-                        Button("Cancel") {
+                    HStack(spacing: 8) {
+                        Button {
                             confirmOffPort = nil
+                        } label: {
+                            Text("Cancel").frame(maxWidth: .infinity)
                         }
                         .keyboardShortcut(.cancelAction)
-                        .buttonStyle(.bordered)
-                        .frame(maxWidth: .infinity)
 
-                        Button("OK") {
+                        Button {
                             model.setPortOutput(index: portIndex, enabled: false)
                             confirmOffPort = nil
+                        } label: {
+                            Text("Turn Off").frame(maxWidth: .infinity)
                         }
                         .keyboardShortcut(.defaultAction)
                         .buttonStyle(.borderedProminent)
-                        .frame(maxWidth: .infinity)
+                        .tint(.red)
                     }
-                    .controlSize(.regular)
+                    .controlSize(.large)
+                    .padding(.top, 4)
                 }
                 .padding(18)
-                .frame(width: 236)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .shadow(color: .black.opacity(0.25), radius: 16, y: 4)
+                .frame(width: 250)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .shadow(color: .black.opacity(0.25), radius: 18, y: 6)
             }
         }
+    }
+
+    // MARK: Formatting
+
+    static func deviceSymbol(for label: String) -> String {
+        let lowered = label.lowercased()
+        if lowered.contains("macbook") || lowered.contains("laptop") { return "laptopcomputer" }
+        if lowered.contains("iphone") || lowered.contains("phone") { return "iphone" }
+        if lowered.contains("ipad") || lowered.contains("tablet") { return "ipad" }
+        if lowered.contains("watch") { return "applewatch" }
+        if lowered.contains("power bank") { return "battery.100" }
+        return "laptopcomputer.and.iphone"
     }
 
     private static func formatRemaining(_ interval: TimeInterval) -> String {
@@ -394,55 +598,10 @@ struct MenuContentView: View {
     }
 }
 
-struct MenuActionRow: View {
-    let title: String
-    var systemImage: String
-    var help: String?
-    let action: () -> Void
-
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: systemImage)
-                    .imageScale(.small)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 16)
-                Text(title)
-                Spacer(minLength: 8)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 7)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(isHovering ? Color.primary.opacity(0.08) : Color.clear)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovering = $0 }
-        .modifier(OptionalHelp(text: help))
-    }
-}
-
-private struct OptionalHelp: ViewModifier {
-    let text: String?
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if let text {
-            content.help(text)
-        } else {
-            content
-        }
-    }
-}
-
 #Preview("Menu") {
     MenuContentView(model: PreviewSample.connectedModel())
-        .frame(width: 280)
 }
 
 #Preview("Paused") {
     MenuContentView(model: PreviewSample.pausedModel())
-        .frame(width: 280)
 }
