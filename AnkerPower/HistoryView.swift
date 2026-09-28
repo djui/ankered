@@ -454,6 +454,43 @@ struct HistoryView: View {
         return "\(total)s"
     }
 
+    /// Most points a single line is drawn with. Swift Charts lays out every mark on each update,
+    /// so plotting thousands of samples per series keeps the main thread busy while the window
+    /// is open. The chart is only a few hundred pixels wide, so more points add nothing visible.
+    private static let maxPlotPointsPerSeries = 360
+
+    /// Averages a time-sorted series into at most `maxPlotPointsPerSeries` equal-time buckets.
+    /// Buckets never span a gap, so segment breaks survive.
+    private static func downsampled(_ points: [ChartPoint]) -> [ChartPoint] {
+        guard points.count > maxPlotPointsPerSeries,
+              let first = points.first?.timestamp, let last = points.last?.timestamp else {
+            return points
+        }
+        let width = last.timeIntervalSince(first) / Double(maxPlotPointsPerSeries)
+        guard width > 0 else { return points }
+        var result: [ChartPoint] = []
+        result.reserveCapacity(maxPlotPointsPerSeries + 1)
+        var bucket: [ChartPoint] = []
+        var bucketIndex = -1
+        func flush() {
+            guard let head = bucket.first else { return }
+            let average = bucket.reduce(0) { $0 + $1.power } / Double(bucket.count)
+            result.append(ChartPoint(id: head.id, timestamp: head.timestamp, series: head.series, power: average))
+            bucket.removeAll(keepingCapacity: true)
+        }
+        for point in points {
+            let index = Int(point.timestamp.timeIntervalSince(first) / width)
+            let gap = bucket.last.map { point.timestamp.timeIntervalSince($0.timestamp) > maxConnectableGap } ?? false
+            if index != bucketIndex || gap {
+                flush()
+                bucketIndex = index
+            }
+            bucket.append(point)
+        }
+        flush()
+        return result
+    }
+
     private static func segmented(_ points: [ChartPoint]) -> [ChartPoint] {
         var result: [ChartPoint] = []
         for seriesName in seriesOrder {
@@ -462,7 +499,7 @@ struct HistoryView: View {
                 .sorted { $0.timestamp < $1.timestamp }
             var segment = 0
             var previous: Date?
-            for point in seriesPoints {
+            for point in downsampled(seriesPoints) {
                 if let previous, point.timestamp.timeIntervalSince(previous) > maxConnectableGap {
                     segment += 1
                 }

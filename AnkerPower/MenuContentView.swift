@@ -11,6 +11,7 @@ struct MenuContentView: View {
     @State private var customTimerPort: Int?
     @State private var customHours = 1
     @State private var customMinutes = 0
+    @State private var isShown = false
     @ObservedObject private var preferences: AppPreferences
 
     init(model: AppModel) {
@@ -62,6 +63,15 @@ struct MenuContentView: View {
         }
         .onAppear {
             StatusItemContextMenu.shared.install(model: model, openWindow: openWindow)
+        }
+        // MenuBarExtra keeps this window, and these views, alive after the popover closes.
+        // Rolling digits there would keep redrawing (with a blur) for every reading nobody sees.
+        .background(WindowVisibilityReader(isVisible: $isShown))
+        .transaction { transaction in
+            if !isShown {
+                transaction.animation = nil
+                transaction.disablesAnimations = true
+            }
         }
         .popover(isPresented: Binding(
             get: { customTimerPort != nil },
@@ -595,6 +605,50 @@ struct MenuContentView: View {
             return "\(minutes)m \(String(format: "%02d", seconds))s"
         }
         return "\(seconds)s"
+    }
+}
+
+/// Reports whether the hosting window is actually on screen.
+struct WindowVisibilityReader: NSViewRepresentable {
+    @Binding var isVisible: Bool
+
+    func makeNSView(context: Context) -> ReaderView {
+        let view = ReaderView()
+        view.onChange = { visible in
+            if isVisible != visible { isVisible = visible }
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: ReaderView, context: Context) {}
+
+    final class ReaderView: NSView {
+        var onChange: ((Bool) -> Void)?
+        private var observer: NSObjectProtocol?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let observer {
+                NotificationCenter.default.removeObserver(observer)
+                self.observer = nil
+            }
+            if let window {
+                observer = NotificationCenter.default.addObserver(
+                    forName: NSWindow.didChangeOcclusionStateNotification,
+                    object: window,
+                    queue: .main
+                ) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.report() }
+                }
+            }
+            report()
+        }
+
+        private func report() {
+            let visible = window?.occlusionState.contains(.visible) ?? false
+            // Never write SwiftUI state from inside a view update.
+            DispatchQueue.main.async { [weak self] in self?.onChange?(visible) }
+        }
     }
 }
 

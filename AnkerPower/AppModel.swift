@@ -9,11 +9,17 @@ enum AppRuntime {
 
 @MainActor
 final class AppModel: ObservableObject {
-    @Published private(set) var connectionState: ChargerConnectionState = .idle
-    @Published private(set) var isPaused = false
+    @Published private(set) var connectionState: ChargerConnectionState = .idle {
+        didSet { updateMenuBarLabel() }
+    }
+    @Published private(set) var isPaused = false {
+        didSet { updateMenuBarLabel() }
+    }
     @Published private(set) var isSuspendedForSleep = false
     @Published private(set) var identity = ChargerIdentity()
-    @Published private(set) var telemetry = ChargerTelemetry.empty
+    @Published private(set) var telemetry = ChargerTelemetry.empty {
+        didSet { updateMenuBarLabel() }
+    }
     @Published private(set) var settings = ChargerSettings.empty
     @Published private(set) var chargerHistory: ChargerPortHistory?
     @Published private(set) var portCommandsInFlight: Set<Int> = []
@@ -21,6 +27,7 @@ final class AppModel: ObservableObject {
     @Published var screensaverCropImage: CGImage?
     @Published var preferences: AppPreferences
 
+    let menuBar = MenuBarLabelState()
     let history: HistoryStore
     let screensaverStore: ScreensaverStore
     let diagnostics: DiagnosticLog
@@ -54,6 +61,7 @@ final class AppModel: ObservableObject {
         DispatchQueue.main.async { [bluetooth] in
             bluetooth.start()
         }
+        updateMenuBarLabel()
     }
 
     deinit {
@@ -91,12 +99,20 @@ final class AppModel: ObservableObject {
         self.settings = settings
         self.chargerHistory = chargerHistory
         self.preferences = preferences ?? AppPreferences.shared
+        updateMenuBarLabel()
     }
 
     var totalPower: Double { telemetry.totalPower }
 
     var menuBarTitle: String {
         "\(Self.compactWatts(totalPower)) W"
+    }
+
+    private func updateMenuBarLabel() {
+        menuBar.update(MenuBarLabelState.Content(
+            title: connectionState.isConnected ? menuBarTitle : nil,
+            isPaused: isPaused
+        ))
     }
 
     var canControlPorts: Bool {
@@ -565,7 +581,12 @@ extension AppModel: ChargerBluetoothDelegate {
         mergeControlState(from: self.telemetry, into: &merged)
         history.append(merged)
         noteIdlePorts(in: merged)
-        self.telemetry = PowerDisplayStabilizer.stabilize(previous: self.telemetry, incoming: merged)
+        let stabilized = PowerDisplayStabilizer.stabilize(previous: self.telemetry, incoming: merged)
+        // Every reading carries a fresh timestamp. Publishing only when something shown changes
+        // lets the menu bar item and any open windows stay idle between identical readings.
+        if stabilized.ports != self.telemetry.ports || stabilized.chargingMode != self.telemetry.chargingMode {
+            self.telemetry = stabilized
+        }
     }
 
     func chargerBluetooth(_ bluetooth: ChargerBluetooth, received control: PortControlUpdate) {
@@ -582,5 +603,22 @@ extension AppModel: ChargerBluetoothDelegate {
 
     func chargerBluetooth(_ bluetooth: ChargerBluetooth, screensaverProgress progress: ScreensaverTransferProgress) {
         screensaverProgress = progress
+    }
+}
+
+/// What the menu bar item shows, kept apart from AppModel. The status item is re-rendered as an
+/// image, and copied to every menu bar, each time its view updates, so it should only hear about
+/// changes to its own text rather than every reading.
+@MainActor
+final class MenuBarLabelState: ObservableObject {
+    struct Content: Equatable {
+        var title: String?
+        var isPaused = false
+    }
+
+    @Published private(set) var content = Content()
+
+    func update(_ next: Content) {
+        if content != next { content = next }
     }
 }

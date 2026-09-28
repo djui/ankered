@@ -2,19 +2,21 @@ import SwiftUI
 
 @main
 struct AnkerPowerApp: App {
-    @StateObject private var model: AppModel
+    // Plain @State, not @StateObject: the scenes only pass the model along, and observing it
+    // here would rebuild every scene on each reading. The views observe what they show.
+    @State private var model: AppModel
 
     init() {
         if ScreenshotExporter.isRequested {
-            _model = StateObject(wrappedValue: PreviewSample.connectedModel())
+            _model = State(initialValue: PreviewSample.connectedModel())
             DispatchQueue.main.async {
                 ScreenshotExporter.exportIfRequested()
             }
         } else if ProcessInfo.processInfo.arguments.contains("--demo") {
             // Sample data and no Bluetooth, for UI work without a charger.
-            _model = StateObject(wrappedValue: PreviewSample.connectedModel())
+            _model = State(initialValue: PreviewSample.connectedModel())
         } else {
-            _model = StateObject(wrappedValue: AppModel())
+            _model = State(initialValue: AppModel())
         }
     }
 
@@ -51,28 +53,32 @@ struct AnkerPowerApp: App {
 }
 
 private struct MenuBarStatusView: View {
-    @ObservedObject var model: AppModel
+    let model: AppModel
+    @ObservedObject private var label: MenuBarLabelState
     @Environment(\.openWindow) private var openWindow
+
+    init(model: AppModel) {
+        self.model = model
+        _label = ObservedObject(wrappedValue: model.menuBar)
+    }
 
     var body: some View {
         Group {
-            if model.connectionState.isConnected {
+            if let title = label.content.title {
                 HStack(spacing: 3) {
                     Image(systemName: "bolt.square.fill")
                     // Tabular digits keep the status item, and everything left of it, from
                     // shifting sideways each time the reading changes.
-                    Text(model.menuBarTitle)
+                    Text(title)
                         .monospacedDigit()
                 }
-                .font(.system(.body, design: .default))
-            } else if model.isPaused {
+            } else if label.content.isPaused {
                 Image(systemName: "pause.rectangle")
-                    .font(.system(.body, design: .default))
             } else {
                 Image(systemName: "bolt.square")
-                    .font(.system(.body, design: .default))
             }
         }
+        .font(.system(.body, design: .default))
         .onAppear {
             StatusItemContextMenu.shared.install(model: model, openWindow: openWindow)
         }
