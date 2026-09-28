@@ -49,7 +49,7 @@ The app lives in the menu bar (`LSUIElement`). It connects locally over Bluetoot
 
 - macOS 14+ menu-bar app for **A2687 only**
 - Local BLE only — no Anker account, no cloud, no network requests
-- Menu-bar title with **total watts** while connected (bolt icon when idle), in tabular digits so it does not jitter
+- Menu-bar icon with a **bar per port** (taller as the port draws more, a stub when something is plugged in but idle) next to **total watts** in tabular digits, so it does not jitter; faint bars while the charger is away, slashed when Bluetooth is off or the connection is paused
 - Popover that leads with the charger's **connection status** and firmware, with Pause and Reconnect beside it; when Bluetooth is off, access is missing, or the charger is out of reach, it says why and offers the fix
 - **Total output** against the 160 W limit, with a bar split by port, and the charging-mode picker (AI 2.0, C1 Priority, Dual Laptop, Custom)
 - Per-port watts, volts, and amps, with charging protocol, connected device, and cable rating (a small USB VID/PID table; unknown models stay at brand level)
@@ -92,7 +92,7 @@ Grant Bluetooth access when macOS asks.
 
 ## Usage
 
-The app appears only in the menu bar. Click the bolt icon:
+The app appears only in the menu bar, with one bar per port (C1 to C3, left to right) next to the total watts. A bar steps up at 15, 45, and 90 W; a solid stub means something is plugged in but not charging, and a faint stub means the port is empty. Click the icon:
 
 - **Header** — charger name, connection status, and firmware. **Reconnect** (↻) drops the session and scans again; **Pause** (⏸) releases the charger so the official Anker app can connect, and **Resume** (▶) takes it back
 - **Total output** — live watts against the 160 W limit, a bar split by port, and the **charging mode** (AI 2.0, C1 Priority, Dual Laptop, or Custom)
@@ -103,7 +103,7 @@ The app appears only in the menu bar. Click the bolt icon:
 
 When there is no live data, the popover explains why instead of showing empty ports: searching, paused, Bluetooth off (**Open Bluetooth Settings**), Bluetooth access missing (**Open Privacy Settings**), or connection lost (**Reconnect**).
 
-Right-click the bolt icon for Pause/Resume, Reconnect, Charging History, Settings, About, and Quit. Shortcuts can turn a port on or off while the app is running.
+Right-click the icon for Pause/Resume, Reconnect, Charging History, Settings, About, and Quit. Shortcuts can turn a port on or off while the app is running.
 
 If a connection fails, open **Settings… › Connection diagnostics** and use **Copy All** when filing an issue.
 

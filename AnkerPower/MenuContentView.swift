@@ -308,8 +308,7 @@ struct MenuContentView: View {
             let amps = port.current.formatted(.number.precision(.fractionLength(2)))
             return "\(volts) V · \(amps) A"
         }
-        let hasSomethingPlugged = port.cableInfo != nil || port.chargingInfo != nil || port.deviceInfo != nil
-        return hasSomethingPlugged ? "Not charging" : "Not in use"
+        return port.hasAttachedDevice ? "Not charging" : "Not in use"
     }
 
     private func portWattsText(_ port: PortTelemetry) -> String {

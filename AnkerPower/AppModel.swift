@@ -38,6 +38,7 @@ final class AppModel: ObservableObject {
     private var lastLocalSettingsAt: Date?
     private var lastChargingAt: [Int: Date] = [:]
     private var idleNotifiedPorts: Set<Int> = []
+    private var portLoads: [PortLoad] = [.empty, .empty, .empty]
     private var sleepObservers: [any NSObjectProtocol] = []
 
     init() {
@@ -109,9 +110,12 @@ final class AppModel: ObservableObject {
     }
 
     private func updateMenuBarLabel() {
+        portLoads = telemetry.ports.enumerated().map { offset, port in
+            PortLoad.make(port, previous: portLoads[safe: offset] ?? .empty)
+        }
         menuBar.update(MenuBarLabelState.Content(
-            title: connectionState.isConnected ? menuBarTitle : nil,
-            isPaused: isPaused
+            glyph: MenuBarGlyph.make(state: connectionState, isPaused: isPaused, loads: portLoads),
+            title: connectionState.isConnected ? menuBarTitle : nil
         ))
     }
 
@@ -608,12 +612,13 @@ extension AppModel: ChargerBluetoothDelegate {
 
 /// What the menu bar item shows, kept apart from AppModel. The status item is re-rendered as an
 /// image, and copied to every menu bar, each time its view updates, so it should only hear about
-/// changes to its own text rather than every reading.
+/// changes to its own glyph and text rather than every reading.
 @MainActor
 final class MenuBarLabelState: ObservableObject {
     struct Content: Equatable {
+        var glyph: MenuBarGlyph = .noCharger
+        /// Total watts, only while connected.
         var title: String?
-        var isPaused = false
     }
 
     @Published private(set) var content = Content()

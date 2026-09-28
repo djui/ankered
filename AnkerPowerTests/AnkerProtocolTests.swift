@@ -63,6 +63,61 @@ final class AnkerProtocolTests: XCTestCase {
         XCTAssertEqual(displayed.ports[0].current, 0, accuracy: 0.001)
     }
 
+    func testPortLoadStepsByDeviceClass() {
+        XCTAssertEqual(PortLoad.step(watts: 5, previous: 0), 1)
+        XCTAssertEqual(PortLoad.step(watts: 20, previous: 0), 2)
+        XCTAssertEqual(PortLoad.step(watts: 64, previous: 0), 3)
+        XCTAssertEqual(PortLoad.step(watts: 100, previous: 0), 4)
+    }
+
+    func testPortLoadHoldsAStepUntilTenPercentBelowItsFloor() {
+        XCTAssertEqual(PortLoad.step(watts: 44, previous: 2), 2)
+        XCTAssertEqual(PortLoad.step(watts: 42, previous: 3), 3)
+        XCTAssertEqual(PortLoad.step(watts: 40, previous: 3), 2)
+        XCTAssertEqual(PortLoad.step(watts: 85, previous: 4), 4)
+        XCTAssertEqual(PortLoad.step(watts: 80, previous: 4), 3)
+        XCTAssertEqual(PortLoad.step(watts: 14, previous: 2), 2)
+        XCTAssertEqual(PortLoad.step(watts: 13, previous: 2), 1)
+    }
+
+    func testPortLoadSeparatesEmptyPluggedInAndCharging() {
+        var port = PortTelemetry.inactive(1)
+        XCTAssertEqual(PortLoad.make(port, previous: .empty), .empty)
+
+        port.cableInfo = "5A–100W Max"
+        XCTAssertEqual(PortLoad.make(port, previous: .empty), .idle)
+
+        port.isActive = true
+        port.power = 64
+        XCTAssertEqual(PortLoad.make(port, previous: .idle), .charging(3))
+
+        port.power = 42
+        XCTAssertEqual(PortLoad.make(port, previous: .charging(3)), .charging(3))
+
+        port.isOutputEnabled = false
+        XCTAssertEqual(PortLoad.make(port, previous: .charging(3)), .idle)
+    }
+
+    func testMenuBarGlyphForEachConnectionState() {
+        let loads: [PortLoad] = [.charging(3), .idle, .empty]
+        func glyph(_ state: ChargerConnectionState, paused: Bool = false) -> MenuBarGlyph {
+            MenuBarGlyph.make(state: state, isPaused: paused, loads: loads)
+        }
+
+        XCTAssertEqual(glyph(.connected), .ports(loads))
+        let retrying: [ChargerConnectionState] = [
+            .scanning, .connecting, .discovering, .negotiating, .idle, .failed("Charger disconnected"),
+            .bluetoothUnavailable(.resetting), .bluetoothUnavailable(.checking)
+        ]
+        for state in retrying {
+            XCTAssertEqual(glyph(state), .noCharger, "\(state)")
+        }
+        XCTAssertEqual(glyph(.idle, paused: true), .unavailable)
+        XCTAssertEqual(glyph(.bluetoothUnavailable(.poweredOff)), .unavailable)
+        XCTAssertEqual(glyph(.bluetoothUnavailable(.unauthorized)), .unavailable)
+        XCTAssertEqual(glyph(.bluetoothUnavailable(.unsupported)), .unavailable)
+    }
+
     func testDisplayNameIgnoresStateWordsInTheProductField() {
         // Seen on A2687 firmware 0.0.5.2: the handshake's A2 field says "Charging".
         XCTAssertEqual(ChargerIdentity(productName: "Charging", firmware: "0.0.5.2").displayName, "Anker Prime 160W")

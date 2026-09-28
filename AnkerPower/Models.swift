@@ -17,6 +17,11 @@ struct PortTelemetry: Codable, Equatable, Identifiable, Sendable {
 
     var isOutputOn: Bool { isOutputEnabled ?? true }
 
+    /// Cable, protocol, or device details mean something is plugged in, even at 0 W.
+    var hasAttachedDevice: Bool {
+        cableInfo != nil || chargingInfo != nil || deviceInfo != nil
+    }
+
     func shutdownRemaining(at date: Date = Date()) -> TimeInterval? {
         guard let shutdownEndsAt, shutdownEndsAt > date else { return nil }
         return shutdownEndsAt.timeIntervalSince(date)
@@ -292,6 +297,69 @@ enum PowerDisplayStabilizer {
             port.current = 0
         }
         return port
+    }
+}
+
+/// One port's bar in the menu bar: nothing plugged in, plugged in but idle, or a watt step from 1 to 4.
+enum PortLoad: Hashable, Sendable {
+    case empty
+    case idle
+    case charging(Int)
+
+    /// Floors of steps 2–4, by device class: watch or slow phone, phone or iPad, laptop, fast laptop.
+    static let stepWatts: [Double] = [15, 45, 90]
+    /// A step holds until the reading drops 10% below its floor, so a laptop near 45 W does not flicker.
+    static let holdFactor = 0.9
+
+    static func make(_ port: PortTelemetry, previous: PortLoad) -> PortLoad {
+        guard port.isActive, port.isOutputOn else {
+            return port.hasAttachedDevice ? .idle : .empty
+        }
+        return .charging(step(watts: port.power, previous: previous.step))
+    }
+
+    static func step(watts: Double, previous: Int) -> Int {
+        var step = 1
+        for (offset, floor) in stepWatts.enumerated() {
+            let candidate = offset + 2
+            if watts >= (candidate <= previous ? floor * holdFactor : floor) {
+                step = candidate
+            }
+        }
+        return step
+    }
+
+    var step: Int {
+        if case .charging(let step) = self { return step }
+        return 0
+    }
+}
+
+/// What the status item draws: a bar per port while connected, faint bars otherwise.
+enum MenuBarGlyph: Hashable, Sendable {
+    /// C1 to C3, left to right.
+    case ports([PortLoad])
+    /// Searching, connecting, or waiting to retry. One glyph for all of them, because the
+    /// Bluetooth layer cycles through these while the charger is away.
+    case noCharger
+    /// Paused, or Bluetooth is off, not allowed, or not supported: faint bars with a slash.
+    case unavailable
+
+    static func make(state: ChargerConnectionState, isPaused: Bool, loads: [PortLoad]) -> MenuBarGlyph {
+        if state.isConnected {
+            return .ports(loads)
+        }
+        if isPaused {
+            return .unavailable
+        }
+        switch state {
+        case .bluetoothUnavailable(.resetting), .bluetoothUnavailable(.checking):
+            return .noCharger
+        case .bluetoothUnavailable:
+            return .unavailable
+        default:
+            return .noCharger
+        }
     }
 }
 
