@@ -6,6 +6,7 @@ struct MenuContentView: View {
 
     @ObservedObject var model: AppModel
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.isScreenshotExport) private var isScreenshotExport
 
     @State private var confirmOffPort: Int?
     @State private var customTimerPort: Int?
@@ -66,7 +67,12 @@ struct MenuContentView: View {
         }
         // MenuBarExtra keeps this window, and these views, alive after the popover closes.
         // Rolling digits there would keep redrawing (with a blur) for every reading nobody sees.
-        .background(WindowVisibilityReader(isVisible: $isShown))
+        // ImageRenderer draws AppKit views as a placeholder over the whole popover.
+        .background {
+            if !isScreenshotExport {
+                WindowVisibilityReader(isVisible: $isShown)
+            }
+        }
         .transaction { transaction in
             if !isShown {
                 transaction.animation = nil

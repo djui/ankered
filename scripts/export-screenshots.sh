@@ -40,6 +40,6 @@ fi
 "$APP/Contents/MacOS/AnkerPower" --export-screenshots "$DEST" "${@:2}"
 
 echo "Wrote screenshots to $DEST"
-for name in menu settings history diagnostics screensaver; do
+for name in menubar menu settings history diagnostics screensaver; do
   ls -l "$DEST/$name.png" "$DEST/$name-dark.png"
 done

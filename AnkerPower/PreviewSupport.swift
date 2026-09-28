@@ -200,6 +200,38 @@ enum PreviewSample {
     }
 }
 
+/// The status item in the menu bar next to Control Center and the clock, drawn with the same
+/// glyph image and menu bar font as the real item, for README.md and the landing page.
+private struct MenuBarScreenshot: View {
+    let content: MenuBarLabelState.Content
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let isDark = colorScheme == .dark
+        HStack(spacing: 18) {
+            HStack(spacing: 3) {
+                Image(nsImage: MenuBarGlyphImage.image(for: content.glyph))
+                    .renderingMode(.template)
+                if let title = content.title {
+                    Text(title)
+                        .monospacedDigit()
+                }
+            }
+            Image(systemName: "switch.2")
+            Text("Mon 28 Sep  9:41")
+        }
+        .font(Font(NSFont.menuBarFont(ofSize: 0)))
+        .foregroundStyle(isDark ? Color.white : Color.black.opacity(0.85))
+        .padding(.horizontal, 30)
+        .frame(height: 48)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(isDark ? Color(red: 0.11, green: 0.12, blue: 0.16) : Color(red: 0.93, green: 0.93, blue: 0.94))
+        )
+    }
+}
+
 @MainActor
 enum ScreenshotExporter {
     private static var didExport = false
@@ -245,6 +277,12 @@ enum ScreenshotExporter {
                 directory.appendingPathComponent("\(name)\(suffix).png")
             }
             let model = PreviewSample.connectedModel()
+            try write(
+                MenuBarScreenshot(content: model.menuBar.content),
+                to: url("menubar"),
+                colorScheme: scheme,
+                opaque: false
+            )
             try write(MenuContentView(model: model).padding(2), to: url("menu"), colorScheme: scheme)
             try write(
                 HistoryView(model: model).frame(width: 760, height: 520),
@@ -299,7 +337,8 @@ enum ScreenshotExporter {
         _ view: V,
         to url: URL,
         colorScheme: ColorScheme = .light,
-        scale: CGFloat = 2
+        scale: CGFloat = 2,
+        opaque: Bool = true
     ) throws {
         // ImageRenderer resolves AppKit catalog colors against the system appearance, so pin
         // the window background to the requested scheme before handing it to SwiftUI.
@@ -313,7 +352,7 @@ enum ScreenshotExporter {
             .environment(\.isScreenshotExport, true)
             .environment(\.colorScheme, colorScheme)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Color(nsColor: background))
+            .background(opaque ? Color(nsColor: background) : .clear)
         let renderer = ImageRenderer(content: rendered)
         renderer.scale = scale
         renderer.proposedSize = ProposedViewSize(width: nil, height: nil)

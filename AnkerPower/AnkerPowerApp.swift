@@ -82,7 +82,7 @@ private struct MenuBarStatusView: View {
 
 /// Draws the status item glyph as a template image, so the menu bar tints it for light, dark,
 /// and wallpaper-tinted bars: three 3 pt bars with 2 pt gaps, bottom-aligned in 13 × 16 pt.
-private enum MenuBarGlyphImage {
+enum MenuBarGlyphImage {
     private static let size = NSSize(width: 13, height: 16)
     /// The status item ignores SwiftUI stack spacing, so the gap before the watts is part of the
     /// image; without it the low stubs read like a decimal point.
