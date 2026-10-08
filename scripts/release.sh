@@ -153,8 +153,9 @@ Native macOS menu-bar monitor for the Anker Prime Charger 160W (A2687).
 
 ## Changes
 
-- The menu-bar icon shows a bar per port, C1 to C3: it steps up at 15, 45, and 90 W, a solid stub marks a device that is plugged in but not charging, and a faint stub an empty port
-- Without a charger the icon shows faint bars, slashed when Bluetooth is off, access is missing, or the connection is paused
+- Name a connected device from its line in the popover, and it shows that name on whichever port it is plugged into, including several ports at once
+- The name is keyed by the device's USB VID/PID, so identical models share it; Settings lists saved names and can forget them
+- Devices from vendors outside the built-in table now show as "Unknown device" instead of nothing, so they can be named too
 
 ## Not included
 
