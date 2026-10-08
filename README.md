@@ -57,6 +57,7 @@ The app lives in the menu bar (`LSUIElement`). It connects locally over Bluetoot
 - **Total output** against the 160 W limit, with a bar split by port, and the charging-mode picker (AI 2.0, C1 Priority, Dual Laptop, Custom)
 - Per-port watts, volts, and amps, with charging protocol, connected device, and cable rating (a small USB VID/PID table; unknown models stay at brand level)
 - Port output on/off (with confirmation), per-port shutdown timers, and optional port names (modern AES-GCM session)
+- **Device names** that follow a device to whichever port it is plugged into, keyed by its USB VID/PID; identical models share a name, since the charger reports no per-unit serial
 - Settings for display (brightness, timeout, language, rotation), a previewed **custom watt split**, port names that save as you type, and This Mac options
 - Custom screensaver image over BLE: four local slots, in-app crop, optional black edge blend (no Anker account)
 - **24-hour history** on this Mac (full resolution for the last hour, 30-second averages before that) with peak, average, energy, and charging-time tiles, an optional charger-side curve, and CSV export
@@ -87,7 +88,7 @@ The app lives in the menu bar (`LSUIElement`). It connects locally over Bluetoot
 
 ## Install
 
-Download `AnkerPower-1.3.2.zip` from the [latest GitHub Release](https://github.com/djui/ankered/releases/latest), unzip it, and move `AnkerPower.app` to `/Applications`.
+Download `AnkerPower-1.4.0.zip` from the [latest GitHub Release](https://github.com/djui/ankered/releases/latest), unzip it, and move `AnkerPower.app` to `/Applications`.
 
 Builds are ad-hoc signed and **not notarized**. On first launch, right-click the app and choose **Open**, then confirm. After that, Spotlight and Finder open it normally.
 
@@ -99,9 +100,9 @@ The app appears only in the menu bar, with one bar per port (C1 to C3, left to r
 
 - **Header** — charger name, connection status, and firmware. **Reconnect** (↻) drops the session and scans again; **Pause** (⏸) releases the charger so the official Anker app can connect, and **Resume** (▶) takes it back
 - **Total output** — live watts against the 160 W limit, a bar split by port, and the **charging mode** (AI 2.0, C1 Priority, Dual Laptop, or Custom)
-- **Ports** — C1–C3 with watts, volts, amps, protocol, device, and cable. The timer button sets a 1 / 2 / 3 hour or custom shutdown; the power button turns the output off (after a confirmation) or back on
+- **Ports** — C1–C3 with watts, volts, amps, protocol, device, and cable. The timer button sets a 1 / 2 / 3 hour or custom shutdown; the power button turns the output off (after a confirmation) or back on. Click a device's line to give it a name; it keeps that name on any port
 - **Charging History** — last 1 / 6 / 24 hours on this Mac or the charger's own curve, with peak, average, energy, and charging time; CSV export
-- **Settings…** (⌘,) — Charger display, Custom split, Screensaver, Port names, and This Mac (launch at login, idle alert, release Bluetooth during sleep, Connection diagnostics)
+- **Settings…** (⌘,) — Charger display, Custom split, Screensaver, Port names, Device names (once you have named one), and This Mac (launch at login, idle alert, release Bluetooth during sleep, Connection diagnostics)
 - **About Anker Power** and **Quit Anker Power** (⌘Q)
 
 When there is no live data, the popover explains why instead of showing empty ports: searching, paused, Bluetooth off (**Open Bluetooth Settings**), Bluetooth access missing (**Open Privacy Settings**), or connection lost (**Reconnect**).
@@ -135,12 +136,12 @@ Cut a local archive (and optionally a GitHub Release) with:
 
 ```sh
 ./scripts/release.sh            # zip only
-./scripts/release.sh --publish 1.3.2
+./scripts/release.sh --publish 1.4.0
 ```
 
 ## Privacy
 
-All charger telemetry and history stay on the Mac. Up to 24 hours of readings (averaged to 30 seconds after the first hour), last-known charger identity, and locally uploaded screensaver JPEGs are stored in the app's Application Support container (`~/Library/Application Support/AnkerPower/`). Port names live in UserDefaults. The app makes no network requests.
+All charger telemetry and history stay on the Mac. Up to 24 hours of readings (averaged to 30 seconds after the first hour), last-known charger identity, and locally uploaded screensaver JPEGs are stored in the app's Application Support container (`~/Library/Application Support/AnkerPower/`). Port and device names live in UserDefaults. The app makes no network requests.
 
 ## Protocol
 

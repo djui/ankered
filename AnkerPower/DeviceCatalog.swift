@@ -59,6 +59,16 @@ enum DeviceCatalog {
         return "\(vendor) Device"
     }
 
+    /// Key for naming a device model; nil when the charger reports no identity.
+    static func deviceKey(vid: UInt16, pid: UInt16) -> String? {
+        guard !usbSentinels.contains(vid) else { return nil }
+        return String(format: "usb:%04X:%04X", vid, pid)
+    }
+
+    static func deviceKey(brand: UInt32, model: UInt32) -> String {
+        String(format: "brand:%02X:%08X", brand, model)
+    }
+
     static func ankerProtocolLabel(vid: UInt16, pid: UInt16, isAIMode: Bool) -> String? {
         guard isAIMode, vid == 0x291A, pid == 0x110A || pid == 0x110B else { return nil }
         return "Anker Protocol"

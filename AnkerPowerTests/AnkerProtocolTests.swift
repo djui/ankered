@@ -840,9 +840,36 @@ final class AnkerProtocolTests: XCTestCase {
         XCTAssertEqual(usbTelemetry.ports[1].deviceInfo, "Prime Power Bank 26K")
         XCTAssertEqual(usbTelemetry.ports[1].chargingInfo, "Anker Protocol")
         XCTAssertEqual(usbTelemetry.ports[2].deviceInfo, "iPad Pro")
+        XCTAssertEqual(usbTelemetry.ports[0].deviceKey, "usb:05AC:7519")
+        XCTAssertEqual(usbTelemetry.ports[2].deviceKey, "usb:05AC:7117")
+        XCTAssertEqual(brandTelemetry.ports[0].deviceKey, "brand:01:00000011")
+        XCTAssertNil(brandTelemetry.ports[1].deviceKey)
+        XCTAssertNil(DeviceCatalog.deviceKey(vid: 0x0000, pid: 0x0000))
+        XCTAssertEqual(DeviceCatalog.deviceKey(vid: 0x1234, pid: 0x0001), "usb:1234:0001")
         XCTAssertNil(DeviceCatalog.usbDeviceLabel(vid: 0x1234, pid: 0x0001))
         XCTAssertEqual(DeviceCatalog.usbDeviceLabel(vid: 0x05AC, pid: 0x9999), "Apple Device")
         XCTAssertNil(DeviceCatalog.ankerProtocolLabel(vid: 0x291A, pid: 0x110A, isAIMode: false))
+    }
+
+    @MainActor
+    func testDeviceNameFollowsTheDeviceAcrossPorts() {
+        let preferences = AppPreferences(previewDeviceNames: [
+            "usb:05AC:7319": DeviceName(name: "Work Mac", model: "MacBook Pro")
+        ])
+        var c1 = PortTelemetry.inactive(1)
+        c1.deviceInfo = "MacBook Pro"
+        c1.deviceKey = "usb:05AC:7319"
+        var c3 = PortTelemetry.inactive(3)
+        c3.deviceInfo = "MacBook Pro"
+        c3.deviceKey = "usb:05AC:7319"
+        var unknown = PortTelemetry.inactive(2)
+        unknown.deviceKey = "usb:1234:0001"
+
+        XCTAssertEqual(preferences.deviceLabel(for: c1), "Work Mac")
+        XCTAssertEqual(preferences.deviceLabel(for: c3), "Work Mac")
+        XCTAssertEqual(preferences.deviceLabel(for: unknown), "Unknown device")
+        XCTAssertTrue(unknown.hasAttachedDevice)
+        XCTAssertNil(preferences.deviceLabel(for: .inactive(2)))
     }
 
     func testParsePortHistoryUsesMillivoltMilliampArrays() throws {

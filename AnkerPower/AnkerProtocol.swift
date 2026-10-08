@@ -623,6 +623,7 @@ final class LegacyAnkerSession {
             }()
             for offset in 0..<3 {
                 guard let brandName = DeviceCatalog.brandName(brands[offset]) else { continue }
+                ports[offset].deviceKey = DeviceCatalog.deviceKey(brand: brands[offset], model: models[offset])
                 ports[offset].deviceInfo = DeviceCatalog.deviceLabel(
                     brand: brandName,
                     model: models[offset]
@@ -644,6 +645,7 @@ final class LegacyAnkerSession {
             if let label = DeviceCatalog.usbDeviceLabel(vid: vid, pid: pid) {
                 ports[offset].deviceInfo = label
             }
+            ports[offset].deviceKey = DeviceCatalog.deviceKey(vid: vid, pid: pid)
         }
     }
 

@@ -78,6 +78,7 @@ enum PreviewSample {
                     cableInfo: "E-Marker 240W",
                     chargingInfo: "PD 3.1",
                     deviceInfo: "MacBook Pro",
+                    deviceKey: "usb:05AC:7319",
                     isOutputEnabled: true
                 ),
                 PortTelemetry(

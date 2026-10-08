@@ -49,6 +49,9 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     screensaverSection
                     portNamesSection
+                    if !preferences.deviceNames.isEmpty {
+                        deviceNamesSection
+                    }
                     macSection
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -423,6 +426,43 @@ struct SettingsView: View {
                 .padding(.horizontal, 12)
                 .frame(minHeight: 36)
                 if index < 3 {
+                    Divider().padding(.leading, 12)
+                }
+            }
+        }
+    }
+
+    private var deviceNamesSection: some View {
+        let entries = preferences.deviceNames.sorted {
+            $0.value.name.localizedStandardCompare($1.value.name) == .orderedAscending
+        }
+        return SettingsSection(
+            title: "Device names",
+            footer: "Name a device from its line in the menu. Devices of the same model share a name."
+        ) {
+            ForEach(Array(entries.enumerated()), id: \.element.key) { offset, entry in
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(entry.value.name)
+                            .fontWeight(.medium)
+                        Text(entry.value.model ?? entry.key)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 8)
+                    Button {
+                        preferences.setDeviceName("", forKey: entry.key, model: entry.value.model)
+                    } label: {
+                        Image(systemName: "minus.circle")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Forget this name")
+                    .accessibilityLabel("Forget \(entry.value.name)")
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .frame(minHeight: 36)
+                if offset < entries.count - 1 {
                     Divider().padding(.leading, 12)
                 }
             }
