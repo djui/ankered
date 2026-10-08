@@ -7,12 +7,15 @@ final class AppPreferences: ObservableObject {
     static let shared = AppPreferences()
 
     private static let portLabelsKey = "portNicknames"
+    private static let deviceNamesKey = "deviceNames"
     private static let idleNotificationsKey = "idleNotificationsEnabled"
     private static let screensaverVignetteKey = "screensaverVignetteEnabled"
     private static let releaseBluetoothOnSleepKey = "releaseBluetoothOnSleep"
     private static let identityFileName = "charger-identity.json"
 
     @Published var portNicknames: [Int: String]
+    /// User names keyed by `PortTelemetry.deviceKey`, so a device keeps its name on any port.
+    @Published private(set) var deviceNames: [String: DeviceName]
     @Published var idleNotificationsEnabled: Bool
     @Published var screensaverVignetteEnabled: Bool
     @Published var releaseBluetoothOnSleep: Bool
@@ -27,6 +30,12 @@ final class AppPreferences: ObservableObject {
             }
         }
         self.portNicknames = nicknames
+        if let data = UserDefaults.standard.data(forKey: Self.deviceNamesKey),
+           let names = try? JSONDecoder().decode([String: DeviceName].self, from: data) {
+            self.deviceNames = names
+        } else {
+            self.deviceNames = [:]
+        }
         self.idleNotificationsEnabled = UserDefaults.standard.bool(forKey: Self.idleNotificationsKey)
         if UserDefaults.standard.object(forKey: Self.screensaverVignetteKey) == nil {
             self.screensaverVignetteEnabled = true
@@ -44,12 +53,14 @@ final class AppPreferences: ObservableObject {
     /// In-memory preferences for SwiftUI previews and screenshot export.
     init(
         previewNicknames: [Int: String] = [:],
+        previewDeviceNames: [String: DeviceName] = [:],
         idleNotificationsEnabled: Bool = false,
         launchesAtLogin: Bool = false,
         screensaverVignetteEnabled: Bool = true,
         releaseBluetoothOnSleep: Bool = true
     ) {
         self.portNicknames = previewNicknames
+        self.deviceNames = previewDeviceNames
         self.idleNotificationsEnabled = idleNotificationsEnabled
         self.launchesAtLogin = launchesAtLogin
         self.screensaverVignetteEnabled = screensaverVignetteEnabled
@@ -72,6 +83,26 @@ final class AppPreferences: ObservableObject {
             portNicknames[index] = trimmed
         }
         persistNicknames()
+    }
+
+    /// The user's name for the attached device, else the catalog label.
+    func deviceLabel(for port: PortTelemetry) -> String? {
+        if let key = port.deviceKey, let named = deviceNames[key] {
+            return named.name
+        }
+        return port.deviceInfo ?? (port.deviceKey == nil ? nil : "Unknown device")
+    }
+
+    func setDeviceName(_ name: String, forKey key: String, model: String?) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            deviceNames[key] = nil
+        } else {
+            deviceNames[key] = DeviceName(name: trimmed, model: model ?? deviceNames[key]?.model)
+        }
+        if let data = try? JSONEncoder().encode(deviceNames) {
+            UserDefaults.standard.set(data, forKey: Self.deviceNamesKey)
+        }
     }
 
     func setIdleNotificationsEnabled(_ enabled: Bool) {
@@ -138,6 +169,12 @@ final class AppPreferences: ObservableObject {
             .appendingPathComponent("AnkerPower", isDirectory: true)
             .appendingPathComponent(Self.identityFileName)
     }
+}
+
+struct DeviceName: Codable, Equatable, Sendable {
+    var name: String
+    /// Catalog label when it was named, so Settings can say what the name stands for.
+    var model: String?
 }
 
 enum IdleChargeNotifier {

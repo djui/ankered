@@ -12,6 +12,9 @@ struct MenuContentView: View {
     @State private var customTimerPort: Int?
     @State private var customHours = 1
     @State private var customMinutes = 0
+    @State private var namingDevice: NamingDevice?
+    @State private var deviceNameDraft = ""
+    @State private var hoveredDevicePort: Int?
     @State private var isShown = false
     @ObservedObject private var preferences: AppPreferences
 
@@ -84,6 +87,12 @@ struct MenuContentView: View {
             set: { if !$0 { customTimerPort = nil } }
         ), arrowEdge: .leading) {
             customTimerPopover
+        }
+        .popover(isPresented: Binding(
+            get: { namingDevice != nil },
+            set: { if !$0 { namingDevice = nil } }
+        ), arrowEdge: .leading) {
+            deviceNamePopover
         }
     }
 
@@ -339,12 +348,91 @@ struct MenuContentView: View {
         if let chargingInfo = port.chargingInfo {
             detailLine(chargingInfo, systemImage: "bolt.circle")
         }
-        if let deviceInfo = port.deviceInfo {
-            detailLine(deviceInfo, systemImage: Self.deviceSymbol(for: deviceInfo))
+        if let deviceLabel = preferences.deviceLabel(for: port) {
+            deviceLine(port, label: deviceLabel)
         }
         if let cableInfo = port.cableInfo {
             detailLine(cableInfo, systemImage: "cable.connector")
         }
+    }
+
+    @ViewBuilder
+    private func deviceLine(_ port: PortTelemetry, label: String) -> some View {
+        // The symbol follows the catalog model, not the user's name for it.
+        let line = detailLine(label, systemImage: Self.deviceSymbol(for: port.deviceInfo ?? label))
+        if let key = port.deviceKey, !isScreenshotExport {
+            Button {
+                startNaming(key: key, model: port.deviceInfo)
+            } label: {
+                HStack(spacing: 4) {
+                    line
+                    Image(systemName: "pencil")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                        .opacity(hoveredDevicePort == port.index ? 1 : 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering in
+                hoveredDevicePort = hovering ? port.index : (hoveredDevicePort == port.index ? nil : hoveredDevicePort)
+            }
+            .help("Name this device")
+            .accessibilityAction(named: "Name Device") {
+                startNaming(key: key, model: port.deviceInfo)
+            }
+        } else {
+            line
+        }
+    }
+
+    private func startNaming(key: String, model: String?) {
+        deviceNameDraft = preferences.deviceNames[key]?.name ?? ""
+        namingDevice = NamingDevice(key: key, model: model)
+    }
+
+    private var deviceNamePopover: some View {
+        let device = namingDevice
+        let modelLabel = device?.model ?? "device"
+        let hasName = device.map { preferences.deviceNames[$0.key] != nil } ?? false
+
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("Name this \(modelLabel)")
+                .font(.headline)
+            TextField(device?.model ?? "Name", text: $deviceNameDraft)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(saveDeviceName)
+            Text("Shown on whichever port it is plugged into. The charger only reports the model, so other \(modelLabel) units share this name.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                if hasName {
+                    Button("Remove Name") {
+                        if let device {
+                            preferences.setDeviceName("", forKey: device.key, model: device.model)
+                        }
+                        namingDevice = nil
+                    }
+                }
+                Spacer()
+                Button("Cancel") {
+                    namingDevice = nil
+                }
+                .keyboardShortcut(.cancelAction)
+                Button("Save", action: saveDeviceName)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(14)
+        .frame(width: 260)
+    }
+
+    private func saveDeviceName() {
+        if let device = namingDevice {
+            preferences.setDeviceName(deviceNameDraft, forKey: device.key, model: device.model)
+        }
+        namingDevice = nil
     }
 
     private func detailLine(_ text: String, systemImage: String, emphasized: Bool = false) -> some View {
@@ -611,6 +699,11 @@ struct MenuContentView: View {
         }
         return "\(seconds)s"
     }
+}
+
+private struct NamingDevice: Equatable {
+    let key: String
+    let model: String?
 }
 
 /// Reports whether the hosting window is actually on screen.

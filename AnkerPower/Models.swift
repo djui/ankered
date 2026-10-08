@@ -9,6 +9,9 @@ struct PortTelemetry: Codable, Equatable, Identifiable, Sendable {
     var cableInfo: String? = nil
     var chargingInfo: String? = nil
     var deviceInfo: String? = nil
+    /// Stable per-model key (USB VID:PID, or brand and model codes) for user device names.
+    /// Identical models share it; the charger reports no per-unit serial.
+    var deviceKey: String? = nil
     var isOutputEnabled: Bool? = nil
     var shutdownDurationSeconds: UInt32? = nil
     var shutdownEndsAt: Date? = nil
@@ -19,7 +22,7 @@ struct PortTelemetry: Codable, Equatable, Identifiable, Sendable {
 
     /// Cable, protocol, or device details mean something is plugged in, even at 0 W.
     var hasAttachedDevice: Bool {
-        cableInfo != nil || chargingInfo != nil || deviceInfo != nil
+        cableInfo != nil || chargingInfo != nil || deviceInfo != nil || deviceKey != nil
     }
 
     func shutdownRemaining(at date: Date = Date()) -> TimeInterval? {
