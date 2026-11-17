@@ -292,11 +292,11 @@ final class AnkerProtocolTests: XCTestCase {
         XCTAssertEqual(telemetry.chargingMode, .ai2)
         XCTAssertEqual(telemetry.ports[0].cableInfo, "3A–60W Max")
         XCTAssertEqual(telemetry.ports[0].chargingInfo, "Apple PD Fast Charging")
-        XCTAssertEqual(telemetry.ports[0].deviceInfo, "Apple Device")
+        XCTAssertEqual(telemetry.ports[0].deviceInfo, "iPhone 15")
         XCTAssertEqual(telemetry.ports[1].cableInfo, "3A–60W Max")
         XCTAssertNil(telemetry.ports[1].chargingInfo)
         XCTAssertEqual(telemetry.ports[2].cableInfo, "5A–100W Max")
-        XCTAssertEqual(telemetry.ports[2].deviceInfo, "Apple Device")
+        XCTAssertEqual(telemetry.ports[2].deviceInfo, "iPad 9 (2021)")
     }
 
     func testTelemetryParserDecodesTypedScalarLayout() throws {
@@ -805,6 +805,45 @@ final class AnkerProtocolTests: XCTestCase {
         return Int(pixel[0])
     }
 
+    /// B4 and B5 bytes as firmware v0.0.5.2 sent them: an Apple device with an
+    /// unlisted PID on C1, an iPhone 15 Pro on C2 and nothing on C3.
+    func testDeviceIdentityPrefersBrandModelNamesFromB5() throws {
+        let fields: [UInt8: Data] = [
+            0xA5: Data([0x04, 0x01, 0xF0, 0x4C, 0x4A, 0x05, 0x62, 0x0A]),
+            0xA6: Data([0x04, 0x01, 0x58, 0x23, 0x5C, 0x07, 0xA3, 0x06]),
+            0xA7: Data([0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
+            0xAA: Data([0x01, 0x00]),
+            0xB4: Data([0x04, 0xAC, 0x05, 0x00, 0x78, 0xAC, 0x05, 0x12, 0x75, 0xFA, 0xFF, 0xFB, 0xFF]),
+            0xB5: Data([0x04, 0xFF, 0xFF, 0xFF, 0xFF, 0x01, 0x00, 0x13, 0x00, 0xFF, 0xFF, 0xFF, 0xFF])
+        ]
+        let telemetry = try XCTUnwrap(AnkerSession.parseTelemetry(fields))
+        XCTAssertEqual(telemetry.ports[0].deviceInfo, "Apple Device")
+        XCTAssertEqual(telemetry.ports[1].deviceInfo, "iPhone 15 Pro")
+        XCTAssertNil(telemetry.ports[2].deviceInfo)
+        // Keys stay on VID/PID so names people gave their devices still apply.
+        XCTAssertEqual(telemetry.ports[1].deviceKey, "usb:05AC:7512")
+
+        var withoutB5 = fields
+        withoutB5[0xB5] = nil
+        let family = try XCTUnwrap(AnkerSession.parseTelemetry(withoutB5))
+        XCTAssertEqual(family.ports[1].deviceInfo, "iPhone 15")
+    }
+
+    func testDeviceCatalogMatchesOfficialNames() {
+        XCTAssertEqual(DeviceCatalog.deviceLabel(brandCode: 0x01, model: 0x13), "iPhone 15 Pro")
+        XCTAssertEqual(DeviceCatalog.deviceLabel(brandCode: 0x01, model: 0x01), "iPhone 12")
+        XCTAssertEqual(DeviceCatalog.deviceLabel(brandCode: 0x01, model: 0x4B), "MacBook Pro 14\" M4 Pro (2024)")
+        XCTAssertEqual(DeviceCatalog.deviceLabel(brandCode: 0x01, model: 0xFFFF), "Apple Device")
+        XCTAssertEqual(DeviceCatalog.deviceLabel(brandCode: 0x01, model: 0x7777), "Apple Device")
+        XCTAssertEqual(DeviceCatalog.deviceLabel(brandCode: 0x0E, model: 0x02), "ThinkPad X1 Carbon (2025)")
+        XCTAssertEqual(DeviceCatalog.deviceLabel(brandCode: 0x02, model: 0x0042), "Samsung Device")
+        XCTAssertNil(DeviceCatalog.deviceLabel(brandCode: 0x99, model: 0x01))
+        XCTAssertEqual(DeviceCatalog.usbDeviceLabel(vid: 0x05AC, pid: 0x7302), "MacBook Air")
+        XCTAssertEqual(DeviceCatalog.usbDeviceLabel(vid: 0x05AC, pid: 0x7518), "iPhone Air")
+        XCTAssertEqual(DeviceCatalog.usbDeviceLabel(vid: 0x291A, pid: 0x25F7), "Wireless Charger 35W")
+        XCTAssertEqual(DeviceCatalog.usbDeviceLabel(vid: 0x05AC, pid: 0x7800), "Apple Device")
+    }
+
     func testDeviceIdentityBrandVersusUsbVidPid() throws {
         let brandFields: [UInt8: Data] = [
             0xA5: Data([0x04, 0x01, 0x84, 0x4E, 0xCA, 0x0D, 0xBC, 0x1B]),
@@ -820,7 +859,7 @@ final class AnkerProtocolTests: XCTestCase {
                        0x00, 0x00, 0x00, 0x00])
         ]
         let brandTelemetry = try XCTUnwrap(AnkerSession.parseTelemetry(brandFields))
-        XCTAssertEqual(brandTelemetry.ports[0].deviceInfo, "Apple Device")
+        XCTAssertEqual(brandTelemetry.ports[0].deviceInfo, "iPhone 15")
         XCTAssertNil(brandTelemetry.ports[0].cableInfo)
 
         let usbFields: [UInt8: Data] = [

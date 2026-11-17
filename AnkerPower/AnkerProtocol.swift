@@ -622,15 +622,31 @@ final class LegacyAnkerSession {
                 return (0..<3).map { littleEndian32(modelPayload, at: $0 * 4) }
             }()
             for offset in 0..<3 {
-                guard let brandName = DeviceCatalog.brandName(brands[offset]) else { continue }
-                ports[offset].deviceKey = DeviceCatalog.deviceKey(brand: brands[offset], model: models[offset])
-                ports[offset].deviceInfo = DeviceCatalog.deviceLabel(
-                    brand: brandName,
+                guard let label = DeviceCatalog.deviceLabel(
+                    brandCode: brands[offset],
                     model: models[offset]
-                )
+                ) else { continue }
+                ports[offset].deviceKey = DeviceCatalog.deviceKey(brand: brands[offset], model: models[offset])
+                ports[offset].deviceInfo = label
             }
             return
         }
+
+        // Firmware v0.0.5.2 reports USB-PD VID/PID in B4 and, beside it, the
+        // official app's brand/model codes in B5: per port a little-endian u16
+        // brand and u16 model, FFFFFFFF when unknown. Like the official app,
+        // prefer the B5 model name and fall back to the VID/PID family.
+        let brandModels: [(brand: UInt32, model: UInt32)?] = {
+            guard let payload = typedByteArray(fields[0xB5]), payload.count >= 12 else {
+                return [nil, nil, nil]
+            }
+            return (0..<3).map { offset in
+                let brand = UInt32(littleEndian16(payload, at: offset * 4))
+                let model = UInt32(littleEndian16(payload, at: offset * 4 + 2))
+                guard brand != 0, brand != 0xFFFF else { return nil }
+                return (brand, model)
+            }
+        }()
 
         for offset in 0..<3 {
             let vid = littleEndian16(identityPayload, at: offset * 4)
@@ -642,7 +658,10 @@ final class LegacyAnkerSession {
             ) {
                 ports[offset].chargingInfo = ankerProtocol
             }
-            if let label = DeviceCatalog.usbDeviceLabel(vid: vid, pid: pid) {
+            if let code = brandModels[offset],
+               let label = DeviceCatalog.deviceLabel(brandCode: code.brand, model: code.model) {
+                ports[offset].deviceInfo = label
+            } else if let label = DeviceCatalog.usbDeviceLabel(vid: vid, pid: pid) {
                 ports[offset].deviceInfo = label
             }
             ports[offset].deviceKey = DeviceCatalog.deviceKey(vid: vid, pid: pid)
