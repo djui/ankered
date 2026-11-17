@@ -1628,10 +1628,10 @@ final class AnkerSession {
             if let brightness = typedControlUnsigned(fields[0xA9]), (25...100).contains(Int(brightness)) {
                 update.brightnessPercent = Int(brightness)
             }
-            if let code = typedUInt8(fields[0xA8]) ?? typedUInt8(fields[0xAB]),
-               (1...63).contains(code) {
-                update.fault = ChargerFault.from(errorCode: code)
-            }
+            // Faults come only from the 0x0301 error report. The one-byte A8
+            // field in these frames is a status value, not an error code:
+            // firmware v0.0.5.2 sends A8 = 3 in every 0x0300 push while all
+            // ports charge normally, which showed a false fault banner.
             if let mode = parseTelemetry(fields)?.chargingMode {
                 update.chargingMode = mode
             }

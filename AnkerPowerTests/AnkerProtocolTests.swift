@@ -674,14 +674,23 @@ final class AnkerProtocolTests: XCTestCase {
             [0xA8: Data([0x01, 0x02]), 0xA9: Data([0x01, 90])],
             command: 0x0200
         )
-        XCTAssertEqual(snapshot.fault, .portAbnormality)
+        XCTAssertNil(snapshot.fault)
         XCTAssertEqual(snapshot.brightnessPercent, 90)
 
-        let ignoredWideFault = AnkerSession.parseSettings(
-            [0xA8: Data([0x03, 0x02, 0x00, 0x00, 0x00])],
-            command: 0x0200
-        )
-        XCTAssertNil(ignoredWideFault.fault)
+        // Firmware v0.0.5.2 sends A8 = 3 in every 0x0300 push while charging
+        // normally. Status frames must never raise a fault banner.
+        for command: UInt16 in [0x0200, 0x0300, 0x020A] {
+            let status = AnkerSession.parseSettings(
+                [0xA8: Data([0x01, 0x03]), 0xAB: Data([0x01, 0x01])],
+                command: command
+            )
+            XCTAssertNil(status.fault, "command \(String(format: "0x%04X", command))")
+        }
+
+        let portFault = AnkerSession.parseSettings([0xA2: Data([0x01, 0x02])], command: 0x0301)
+        XCTAssertEqual(portFault.fault, .portAbnormality)
+        let cleared = AnkerSession.parseSettings([0xA2: Data([0x01, 0x00])], command: 0x0301)
+        XCTAssertEqual(cleared.fault, ChargerFault.none)
     }
 
     func testScreensaverTLVLayoutsAndE1() throws {
